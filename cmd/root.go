@@ -1,0 +1,131 @@
+package cmd
+
+import (
+	"fmt"
+
+	"github.com/Elissdev/tl-dr/internal/config"
+	"github.com/Elissdev/tl-dr/internal/input"
+	"github.com/Elissdev/tl-dr/internal/summarizer"
+	"github.com/spf13/cobra"
+)
+
+var (
+	lang             string
+	model            string
+	customPromptFlag string
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "tldr [flags] [<arquivo>]",
+	Short: "tl;dr — Resumidor de texto via CLI",
+	Long: `tl;dr é uma ferramenta de linha de comando que recebe um texto
+(de arquivo ou stdin) e produz um resumo conciso no idioma especificado.
+
+Documentação: https://github.com/Elissdev/tl-dr`,
+	Args:          cobra.MaximumNArgs(1),
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Carregar configuração
+		cfg := config.Load()
+
+		// 2. Validar configuração
+		if err := cfg.Validate(); err != nil {
+			return WrapExitError(ExitArgumentError, err)
+		}
+
+		// 3. Resolver modelo (flag > env > hardcoded)
+		resolvedModel := cfg.DefaultModel
+		if model != "" {
+			resolvedModel = model
+		}
+
+		// 4. Resolver idioma (flag > env)
+		resolvedLang := lang
+		if resolvedLang == "" {
+			resolvedLang = cfg.DefaultLang
+		}
+		if resolvedLang == "" {
+			return NewExitError(ExitArgumentError,
+				"idioma é obrigatório: use --lang ou defina TLDR_DEFAULT_LANG")
+		}
+
+		// 5. Ler entrada
+		var text string
+		var inputSource string
+		if len(args) > 0 {
+			inputSource = "arquivo"
+			data, err := input.ReadFile(args[0])
+			if err != nil {
+				return WrapExitError(ExitGenericError,
+					fmt.Errorf("erro ao ler arquivo: %w", err))
+			}
+			text = data
+		} else {
+			inputSource = "stdin"
+			if !input.IsStdinAvailable() {
+				return NewExitError(ExitArgumentError,
+					"nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+			}
+			data, err := input.ReadStdin()
+			if err != nil {
+				return WrapExitError(ExitGenericError,
+					fmt.Errorf("erro ao ler stdin: %w", err))
+			}
+			text = data
+		}
+
+		if text == "" {
+			return NewExitError(ExitArgumentError,
+				fmt.Sprintf("%s vazio — forneça um texto para resumir", inputSource))
+		}
+
+		// 6. Construir prompt
+		finalPrompt := buildPrompt(resolvedLang, customPromptFlag)
+
+		// 7. Chamar API
+		s := summarizer.New(summarizer.Config{
+			APIKey:  cfg.APIKey,
+			BaseURL: cfg.BaseURL,
+			Model:   resolvedModel,
+			Timeout: cfg.Timeout,
+		})
+
+		// A chave de API já foi copiada para o cliente da API;
+		// podemos zerar a nossa cópia local.
+		cfg.Clear()
+
+		summary, err := s.Summarize(cmd.Context(), finalPrompt, text)
+		if err != nil {
+			return WrapExitError(ExitAPIError,
+				fmt.Errorf("erro na API: %w", err))
+		}
+
+		// 8. Escrever saída no stdout
+		fmt.Print(summary)
+
+		return nil
+	},
+}
+
+// Execute executa o comando raiz. Retorna o erro, se houver, para que o
+// caller (main) possa fazer cleanup adequado antes de os.Exit.
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	rootCmd.Flags().StringVarP(&lang, "lang", "l", "", "Idioma do resumo (ex: pt-br, en, es)")
+	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
+	rootCmd.Flags().StringVarP(&customPromptFlag, "prompt", "p", "", "Prompt customizado para o resumo")
+
+	// --lang é validado manualmente no RunE (pode vir via TLDR_DEFAULT_LANG)
+}
+
+// buildPrompt constrói o prompt final para a API.
+func buildPrompt(lang, customPrompt string) string {
+	if customPrompt != "" {
+		return fmt.Sprintf("Responda em %s.\n\n%s", lang, customPrompt)
+	}
+	return fmt.Sprintf("Summarize the following text in %s. Be concise but capture all key points.", lang)
+}

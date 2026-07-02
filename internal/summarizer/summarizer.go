@@ -14,28 +14,40 @@ import (
 )
 
 // apiKeyPattern detecta possíveis chaves de API em mensagens de erro para
-// redação antes de exibir ao usuário.
-var apiKeyPattern = regexp.MustCompile(`(?i)(sk-[a-z0-9]{20,}|api[_-]?key[=:]\s*\S{8,}|token[=:]\s*\S{8,})`)
+// fazer redação antes de exibir ao usuário.
+// Cobre os formatos:
+//   - sk-... (OpenAI legado)
+//   - sk-proj-... (OpenAI novo formato)
+//   - api[_-]?key=... (qualquer provider)
+//   - token=... (qualquer provider)
+var apiKeyPattern = regexp.MustCompile(`(?i)(sk-(proj-)?[a-z0-9]{20,}|api[_-]?key[=:]\s*\S{8,}|token[=:]\s*\S{8,})`)
 
-// Config defines the configuration for the summarizer.
+// Config define a configuração para o summarizer.
 type Config struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+	Timeout time.Duration
 }
 
-// Summarizer handles communication with the API.
+// Summarizer gerencia a comunicação com a API.
 type Summarizer struct {
 	client *openai.Client
 	model  string
 }
 
-// New creates a new Summarizer with the given config.
+// New cria um novo Summarizer com a configuração fornecida.
 func New(cfg Config) *Summarizer {
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
 	client := openai.NewClient(
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),
-		option.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
+		option.WithHTTPClient(&http.Client{Timeout: timeout}),
+		option.WithMaxRetries(0), // sem retry automático — tratamos erros no classifyAPIError
 	)
 	return &Summarizer{
 		client: &client,
@@ -43,8 +55,8 @@ func New(cfg Config) *Summarizer {
 	}
 }
 
-// Summarize sends a prompt and text to the API and returns the summary.
-// O prompt é enviado como mensagem de sistema (reduz risco de prompt injection)
+// Summarize envia um prompt e texto para a API e retorna o resumo.
+// O prompt é enviado como mensagem de sistema (reduz risco de injeção de prompt)
 // e o texto do usuário como mensagem de usuário.
 func (s *Summarizer) Summarize(ctx context.Context, systemPrompt, userText string) (string, error) {
 	chat, err := s.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{

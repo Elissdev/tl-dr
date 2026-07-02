@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/Elissdev/tl-dr/internal/secrets"
 )
@@ -13,6 +15,7 @@ type Config struct {
 	BaseURL      string
 	DefaultModel string
 	DefaultLang  string
+	Timeout      time.Duration
 
 	protectedKey *secrets.ProtectedAPIKey // guarda referência para limpeza posterior
 }
@@ -20,9 +23,17 @@ type Config struct {
 // Load lê as variáveis de ambiente e retorna um Config.
 func Load() Config {
 	cfg := Config{
-		BaseURL:      getEnv("TLDR_BASE_URL", "https://apiario.dev/v1"),
+		BaseURL:      getEnv("TLDR_BASE_URL", "https://api.apiario.dev/v1"),
 		DefaultModel: getEnv("TLDR_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"),
 		DefaultLang:  os.Getenv("TLDR_DEFAULT_LANG"),
+		Timeout:      30 * time.Second,
+	}
+
+	// Timeout configurável via TLDR_TIMEOUT (em segundos)
+	if t := os.Getenv("TLDR_TIMEOUT"); t != "" {
+		if secs, err := strconv.Atoi(t); err == nil && secs > 0 {
+			cfg.Timeout = time.Duration(secs) * time.Second
+		}
 	}
 
 	// Tenta carregar a chave de forma protegida; se falhar, Validate() captura depois.

@@ -10,6 +10,9 @@ import (
 // MaxInputSize é o tamanho máximo aceito para entrada (arquivo ou stdin).
 const MaxInputSize int64 = 10 * 1024 * 1024 // 10 MB
 
+// ErrInputTooLarge indica que a entrada excedeu o tamanho máximo permitido.
+var ErrInputTooLarge = fmt.Errorf("entrada muito grande — tamanho máximo permitido: %d bytes", MaxInputSize)
+
 // ReadFile lê o conteúdo de um arquivo. Apenas UTF-8 é suportado.
 func ReadFile(path string) (string, error) {
 	info, err := os.Stat(path)
@@ -36,18 +39,28 @@ func ReadFile(path string) (string, error) {
 }
 
 // ReadStdin lê o conteúdo da entrada padrão. Apenas UTF-8 é suportado.
+// Se a entrada exceder MaxInputSize, retorna ErrInputTooLarge.
 func ReadStdin() (string, error) {
-	limitedReader := io.LimitReader(os.Stdin, MaxInputSize) // limite de 10 MB
+	// Lê MaxInputSize + 1 bytes para detectar se a entrada foi truncada
+	limit := MaxInputSize + 1
+	limitedReader := io.LimitReader(os.Stdin, limit)
 	data, err := io.ReadAll(limitedReader)
 	if err != nil {
 		return "", fmt.Errorf("erro ao ler da entrada padrão: %w", err)
 	}
+
+	if int64(len(data)) > MaxInputSize {
+		return "", ErrInputTooLarge
+	}
+
 	if len(data) == 0 {
 		return "", nil
 	}
+
 	if !utf8.Valid(data) {
 		return "", fmt.Errorf("entrada não está codificada em UTF-8")
 	}
+
 	return string(data), nil
 }
 

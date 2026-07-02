@@ -118,7 +118,7 @@ Quando ambos são fornecidos, **ambos são respeitados**: o prompt customizado d
 | Variável | Obrigatória | Padrão | Descrição |
 |----------|-------------|--------|-----------|
 | `TLDR_API_KEY` | ✅ Sim | — | Chave de API do provedor |
-| `TLDR_BASE_URL` | ❌ Não | `https://apiario.dev/v1` | URL base da API (compatível OpenAI) |
+| `TLDR_BASE_URL` | ❌ Não | `https://api.apiario.dev/v1` | URL base da API (compatível OpenAI) |
 | `TLDR_DEFAULT_MODEL` | ❌ Não | `deepseek/deepseek-v4-flash` | Modelo padrão |
 | `TLDR_DEFAULT_LANG` | ❌ Não | `""` | Idioma padrão (se não passado via `--lang`) |
 

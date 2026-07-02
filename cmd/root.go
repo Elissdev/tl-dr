@@ -22,14 +22,16 @@ var rootCmd = &cobra.Command{
 (de arquivo ou stdin) e produz um resumo conciso no idioma especificado.
 
 Documentação: https://github.com/Elissdev/tl-dr`,
-	Args: cobra.MaximumNArgs(1),
+	Args:          cobra.MaximumNArgs(1),
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Carregar configuração
 		cfg := config.Load()
 
 		// 2. Validar configuração
 		if err := cfg.Validate(); err != nil {
-			return err
+			return WrapExitError(ExitArgumentError, err)
 		}
 
 		// 3. Resolver modelo (flag > env > hardcoded)
@@ -44,30 +46,38 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 			resolvedLang = cfg.DefaultLang
 		}
 		if resolvedLang == "" {
-			return fmt.Errorf("idioma é obrigatório: use --lang ou defina TLDR_DEFAULT_LANG")
+			return NewExitError(ExitArgumentError,
+				"idioma é obrigatório: use --lang ou defina TLDR_DEFAULT_LANG")
 		}
 
 		// 5. Ler entrada
 		var text string
+		var inputSource string
 		if len(args) > 0 {
+			inputSource = "arquivo"
 			data, err := input.ReadFile(args[0])
 			if err != nil {
-				return fmt.Errorf("erro ao ler arquivo: %w", err)
+				return WrapExitError(ExitGenericError,
+					fmt.Errorf("erro ao ler arquivo: %w", err))
 			}
 			text = data
 		} else {
+			inputSource = "stdin"
 			if !input.IsStdinAvailable() {
-				return fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+				return NewExitError(ExitArgumentError,
+					"nenhum texto fornecido — passe um arquivo ou pipe via stdin")
 			}
 			data, err := input.ReadStdin()
 			if err != nil {
-				return fmt.Errorf("erro ao ler stdin: %w", err)
+				return WrapExitError(ExitGenericError,
+					fmt.Errorf("erro ao ler stdin: %w", err))
 			}
 			text = data
 		}
 
 		if text == "" {
-			return fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+			return NewExitError(ExitArgumentError,
+				fmt.Sprintf("%s vazio — forneça um texto para resumir", inputSource))
 		}
 
 		// 6. Construir prompt
@@ -75,9 +85,10 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 
 		// 7. Chamar API
 		s := summarizer.New(summarizer.Config{
-			APIKey:   cfg.APIKey,
-			BaseURL:  cfg.BaseURL,
-			Model:    resolvedModel,
+			APIKey:  cfg.APIKey,
+			BaseURL: cfg.BaseURL,
+			Model:   resolvedModel,
+			Timeout: cfg.Timeout,
 		})
 
 		// A chave de API já foi copiada para o cliente da API;
@@ -86,7 +97,8 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 
 		summary, err := s.Summarize(cmd.Context(), finalPrompt, text)
 		if err != nil {
-			return fmt.Errorf("erro na API: %w", err)
+			return WrapExitError(ExitAPIError,
+				fmt.Errorf("erro na API: %w", err))
 		}
 
 		// 8. Escrever saída no stdout

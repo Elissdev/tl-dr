@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -10,33 +9,33 @@ func TestBuildPrompt(t *testing.T) {
 		name         string
 		lang         string
 		customPrompt string
-		wantContains string
+		want         string
 	}{
 		{
 			name:         "default prompt",
 			lang:         "pt-br",
 			customPrompt: "",
-			wantContains: "Summarize the following text in pt-br",
+			want:         "Summarize the following text in pt-br. Be concise but capture all key points.",
 		},
 		{
 			name:         "custom prompt with lang",
 			lang:         "en",
 			customPrompt: "Resuma para um leigo no assunto",
-			wantContains: "Responda em en.",
+			want:         "Responda em en.\n\nResuma para um leigo no assunto",
 		},
 		{
 			name:         "custom prompt includes original",
 			lang:         "es",
 			customPrompt: "Haz un resumen",
-			wantContains: "Haz un resumen",
+			want:         "Responda em es.\n\nHaz un resumen",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := buildPrompt(tt.lang, tt.customPrompt)
-			if !strings.Contains(result, tt.wantContains) {
-				t.Errorf("buildPrompt(%q, %q) = %q, want containing %q", tt.lang, tt.customPrompt, result, tt.wantContains)
+			if result != tt.want {
+				t.Errorf("buildPrompt(%q, %q) = %q, want %q", tt.lang, tt.customPrompt, result, tt.want)
 			}
 		})
 	}

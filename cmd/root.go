@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/Elissdev/tl-dr/internal/config"
 	"github.com/Elissdev/tl-dr/internal/input"
@@ -11,9 +10,9 @@ import (
 )
 
 var (
-	lang   string
-	model  string
-	prompt string
+	lang             string
+	model            string
+	customPromptFlag string
 )
 
 var rootCmd = &cobra.Command{
@@ -28,7 +27,7 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 		// 1. Carregar configuração
 		cfg := config.Load()
 
-			// 2. Validar configuração
+		// 2. Validar configuração
 		if err := cfg.Validate(); err != nil {
 			return err
 		}
@@ -57,6 +56,9 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 			}
 			text = data
 		} else {
+			if !input.IsStdinAvailable() {
+				return fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+			}
 			data, err := input.ReadStdin()
 			if err != nil {
 				return fmt.Errorf("erro ao ler stdin: %w", err)
@@ -69,7 +71,7 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 		}
 
 		// 6. Construir prompt
-		finalPrompt := buildPrompt(resolvedLang, prompt)
+		finalPrompt := buildPrompt(resolvedLang, customPromptFlag)
 
 		// 7. Chamar API
 		s := summarizer.New(summarizer.Config{
@@ -77,6 +79,10 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 			BaseURL:  cfg.BaseURL,
 			Model:    resolvedModel,
 		})
+
+		// A chave de API já foi copiada para o cliente da API;
+		// podemos zerar a nossa cópia local.
+		cfg.Clear()
 
 		summary, err := s.Summarize(cmd.Context(), finalPrompt, text)
 		if err != nil {
@@ -90,16 +96,16 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 	},
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+// Execute executa o comando raiz. Retorna o erro, se houver, para que o
+// caller (main) possa fazer cleanup adequado antes de os.Exit.
+func Execute() error {
+	return rootCmd.Execute()
 }
 
 func init() {
 	rootCmd.Flags().StringVarP(&lang, "lang", "l", "", "Idioma do resumo (ex: pt-br, en, es)")
 	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
-	rootCmd.Flags().StringVarP(&prompt, "prompt", "p", "", "Prompt customizado para o resumo")
+	rootCmd.Flags().StringVarP(&customPromptFlag, "prompt", "p", "", "Prompt customizado para o resumo")
 
 	// --lang é validado manualmente no RunE (pode vir via TLDR_DEFAULT_LANG)
 }

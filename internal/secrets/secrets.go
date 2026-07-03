@@ -29,7 +29,11 @@ func (p *ProtectedAPIKey) Get() string {
 
 // Clear zera os bytes da chave na memória e invalida o wrapper.
 // Após chamar Clear o wrapper não deve mais ser usado.
+// Esta função é nil-safe: chamar Clear() em um ponteiro nil é seguro.
 func (p *ProtectedAPIKey) Clear() {
+	if p == nil {
+		return
+	}
 	for i := range p.data {
 		p.data[i] = 0
 	}

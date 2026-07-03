@@ -38,7 +38,7 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 			resolvedModel = model
 		}
 
-		// 4. Resolver idioma (flag > env)
+		// 3. Resolver idioma (flag > env)
 		resolvedLang := lang
 		if resolvedLang == "" {
 			resolvedLang = cfg.DefaultLang
@@ -48,7 +48,7 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 				"idioma é obrigatório: use --lang ou defina TLDR_DEFAULT_LANG")
 		}
 
-		// 5. Ler entrada
+		// 4. Ler entrada
 		var text string
 		var inputSource string
 		if len(args) > 0 {
@@ -78,10 +78,10 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 				fmt.Sprintf("%s vazio — forneça um texto para resumir", inputSource))
 		}
 
-		// 6. Construir prompt
+		// 5. Construir prompt
 		finalPrompt := buildPrompt(resolvedLang, customPromptFlag)
 
-		// 7. Chamar API
+		// 6. Chamar API
 		s := summarizer.New(summarizer.Config{
 			APIKey:  cfg.APIKey,
 			BaseURL: cfg.BaseURL,
@@ -89,8 +89,11 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 			Timeout: cfg.Timeout,
 		})
 
-		// A chave de API já foi copiada para o cliente da API;
-		// podemos zerar a nossa cópia local.
+		// A chave de API já foi copiada para o cliente da API (struct
+		// summarizer.Config acima); podemos zerar a nossa cópia local.
+		// ATENÇÃO: cfg.Clear() deve permanecer APÓS a cópia da APIKey
+		// para summarizer.Config. Se no futuro o Config for passado por
+		// referência, esta ordem precisará ser ajustada.
 		cfg.Clear()
 
 		summary, err := s.Summarize(cmd.Context(), finalPrompt, text)
@@ -99,7 +102,7 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 				fmt.Errorf("erro na API: %w", err))
 		}
 
-		// 8. Escrever saída no stdout
+		// 7. Escrever saída no stdout
 		fmt.Print(summary)
 
 		return nil
@@ -121,9 +124,15 @@ func init() {
 }
 
 // buildPrompt constrói o prompt final para a API.
+// Quando lang é pt-br ou pt, usa um template em português para o prompt padrão.
 func buildPrompt(lang, customPrompt string) string {
 	if customPrompt != "" {
 		return fmt.Sprintf("Responda em %s.\n\n%s", lang, customPrompt)
 	}
-	return fmt.Sprintf("Summarize the following text in %s. Be concise but capture all key points.", lang)
+	switch lang {
+	case "pt-br", "pt":
+		return fmt.Sprintf("Resuma o texto a seguir em %s. Seja conciso mas capture todos os pontos-chave.", lang)
+	default:
+		return fmt.Sprintf("Summarize the following text in %s. Be concise but capture all key points.", lang)
+	}
 }

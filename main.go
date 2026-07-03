@@ -16,6 +16,8 @@ func main() {
 		if errors.As(err, &exitErr) {
 			os.Exit(int(exitErr.Code))
 		}
+		// Se o erro não for um ExitError (ex: panic recuperado inesperado),
+		// usa código genérico 1 como fallback.
 		os.Exit(1)
 	}
 }

@@ -90,22 +90,28 @@ func TestLoad(t *testing.T) {
 	t.Run("config sem API key retorna erro", func(t *testing.T) {
 		unsetEnv(t, "TLDR_API_KEY")
 
-		_, err := Load()
+		cfg, err := Load()
 		if err == nil {
 			t.Fatal("Load() sem API key = nil, want erro")
 		}
+		if cfg.APIKey != "" {
+			t.Errorf("cfg.APIKey = %q, want vazio", cfg.APIKey)
+		}
+		if cfg.BaseURL != "https://api.apiario.dev/v1" {
+			t.Errorf("cfg.BaseURL = %q, want default", cfg.BaseURL)
+		}
+		if cfg.DefaultModel != "deepseek/deepseek-v4-flash" {
+			t.Errorf("cfg.DefaultModel = %q, want default", cfg.DefaultModel)
+		}
 	})
 
-	t.Run("timeout inválido usa padrão", func(t *testing.T) {
+	t.Run("timeout inválido retorna erro", func(t *testing.T) {
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 		setEnv(t, "TLDR_TIMEOUT", "invalido")
 
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load() erro inesperado: %v", err)
-		}
-		if cfg.Timeout != 30*time.Second {
-			t.Errorf("Timeout com valor inválido = %v, want %v", cfg.Timeout, 30*time.Second)
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() com TLDR_TIMEOUT inválido = nil, want erro")
 		}
 	})
 
@@ -121,6 +127,16 @@ func TestLoad(t *testing.T) {
 			t.Errorf("Timeout com valor zero = %v, want %v", cfg.Timeout, 30*time.Second)
 		}
 	})
+
+	t.Run("URL base inválida retorna erro", func(t *testing.T) {
+		setEnv(t, "TLDR_API_KEY", "sk-test-key")
+		setEnv(t, "TLDR_BASE_URL", "://invalida")
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() com TLDR_BASE_URL inválida = nil, want erro")
+		}
+	})
 }
 
 func TestClear(t *testing.T) {
@@ -134,8 +150,16 @@ func TestClear(t *testing.T) {
 		t.Fatal("Load() deveria ter carregado a chave")
 	}
 
+	// Verifica que Clear() zera a chave visível e que a struct pode ser
+	// usada novamente sem pânico (proteção contra double-clear).
 	cfg.Clear()
 	if cfg.APIKey != "" {
-		t.Error("Clear() deveria ter zerado APIKey")
+		t.Errorf("Clear() não zerou APIKey: %q", cfg.APIKey)
+	}
+
+	// Double-clear não deve causar pânico
+	cfg.Clear()
+	if cfg.APIKey != "" {
+		t.Errorf("Clear() após double-clear não zerou APIKey: %q", cfg.APIKey)
 	}
 }

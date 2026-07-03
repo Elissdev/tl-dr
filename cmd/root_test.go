@@ -12,10 +12,22 @@ func TestBuildPrompt(t *testing.T) {
 		want         string
 	}{
 		{
-			name:         "default prompt",
+			name:         "default prompt en",
+			lang:         "en",
+			customPrompt: "",
+			want:         "Summarize the following text in en. Be concise but capture all key points.",
+		},
+		{
+			name:         "default prompt pt-br",
 			lang:         "pt-br",
 			customPrompt: "",
-			want:         "Summarize the following text in pt-br. Be concise but capture all key points.",
+			want:         "Resuma o texto a seguir em pt-br. Seja conciso mas capture todos os pontos-chave.",
+		},
+		{
+			name:         "default prompt pt",
+			lang:         "pt",
+			customPrompt: "",
+			want:         "Resuma o texto a seguir em pt. Seja conciso mas capture todos os pontos-chave.",
 		},
 		{
 			name:         "custom prompt with lang",

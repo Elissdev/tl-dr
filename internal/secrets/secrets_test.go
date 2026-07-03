@@ -55,11 +55,24 @@ func TestProtectedAPIKeyClear(t *testing.T) {
 		t.Fatalf("Get() = %q, want %q", key.Get(), "sk-sensitive-key")
 	}
 
+	// Captura o slice interno ANTES de limpar para verificar byte a byte.
+	// Isto acessa um campo não exportado — é frágil a renomeações/refatorações
+	// do tipo, mas é a única forma de garantir que a memória foi realmente zerada
+	// (e não apenas que Get() retorna vazio).
+	data := key.data
+
 	key.Clear()
 
-	// Após Clear, o buffer interno deve estar zerado
+	// Após Clear, Get() deve retornar vazio
 	if key.Get() != "" {
 		t.Error("Clear() não zerou o buffer interno")
+	}
+
+	// Verifica byte a byte que todos foram zerados
+	for i, b := range data {
+		if b != 0 {
+			t.Errorf("byte %d não foi zerado: %d", i, b)
+		}
 	}
 }
 

@@ -2,11 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/Elissdev/tl-dr/internal/secrets"
+	"github.com/joho/godotenv"
 )
 
 // Config armazena as configurações lidas de variáveis de ambiente.
@@ -21,8 +23,14 @@ type Config struct {
 }
 
 // Load lê as variáveis de ambiente e retorna um Config.
-// Retorna erro se TLDR_API_KEY não estiver definida.
+// Retorna erro se a chave de API não puder ser carregada ou se alguma
+// variável de ambiente obrigatória for inválida.
 func Load() (Config, error) {
+	// Tenta carregar .env; se houver erro diferente de "arquivo não encontrado", reporta
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+		return Config{APIKey: ""}, fmt.Errorf("erro ao carregar .env: %w", err)
+	}
+
 	cfg := Config{
 		BaseURL:      getEnv("TLDR_BASE_URL", "https://api.apiario.dev/v1"),
 		DefaultModel: getEnv("TLDR_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"),
@@ -30,9 +38,18 @@ func Load() (Config, error) {
 		Timeout:      30 * time.Second,
 	}
 
+	// Valida a URL base
+	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
+		return cfg, fmt.Errorf("TLDR_BASE_URL inválida: %w", err)
+	}
+
 	// Timeout configurável via TLDR_TIMEOUT (em segundos)
 	if t := os.Getenv("TLDR_TIMEOUT"); t != "" {
-		if secs, err := strconv.Atoi(t); err == nil && secs > 0 {
+		secs, err := strconv.Atoi(t)
+		if err != nil {
+			return cfg, fmt.Errorf("TLDR_TIMEOUT inválido: %q — deve ser um número inteiro de segundos", t)
+		}
+		if secs > 0 {
 			cfg.Timeout = time.Duration(secs) * time.Second
 		}
 	}
@@ -40,7 +57,7 @@ func Load() (Config, error) {
 	// Carrega a chave de API — obrigatória
 	key, err := secrets.LoadAPIKey()
 	if err != nil {
-		return cfg, fmt.Errorf("TLDR_API_KEY não definida — configure a variável de ambiente")
+		return cfg, fmt.Errorf("falha ao carregar chave de API: %w", err)
 	}
 	cfg.APIKey = key.Get()
 	cfg.protectedKey = key

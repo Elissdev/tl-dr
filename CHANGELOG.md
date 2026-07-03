@@ -1,5 +1,57 @@
 # Changelog
 
+## Working Tree — Breaking Changes (não publicado)
+
+### 🔴 Breaking Changes na API Pública
+
+- **`summarizer.New()` agora retorna `(*Client, error)`**: a função agora valida campos
+  obrigatórios (`APIKey`, `Model`, `BaseURL`) e retorna erro se ausentes. O retorno mudou
+  de `*Summarizer` para `(*Client, error)`.
+- **Struct `Summarizer` renomeada para `Client`**: qualquer referência direta a
+  `summarizer.Summarizer` quebra.
+- **Constantes de exit code renomeadas**: `ExitSuccess` → `ExitOK`, `ExitGenericError` →
+  `ExitInternal`, `ExitAPIError` → `ExitAPI`, `ExitArgumentError` → `ExitArgs`.
+  Nova constante: `ExitTimeout = 4`.
+- **`input.ReadFile()` renomeado para `input.ReadFromFile()`**
+- **`input.ReadStdin()` renomeado para `input.ReadFromStdin()`**
+- **`input.IsStdinAvailable()` renomeado para `input.IsStdinRedirected()`**
+
+### 🟠 Breaking Changes Comportamentais
+
+- **`ReadFromStdin()` agora rejeita stdin vazio com erro**: antes retornava `("", nil)`,
+  agora retorna erro `"nenhum texto recebido via stdin"`.
+- **`ReadFromStdin()` agora rejeita terminal interativo**: se stdin for um terminal
+  (sem pipe/redirecionamento), retorna erro imediato.
+- **Timeout de 30s no stdin**: se o pipe não enviar dados em 30s, a leitura falha com
+  erro de timeout e o stdin é fechado.
+- **`buildPrompt()` mudou formato de saída**: prefixo de segurança contra prompt injection
+  adicionado antes de todo prompt customizado ou padrão.
+- **Saída agora é sanitizada**: ANSI escape codes são removidos da resposta do modelo.
+  Use a nova flag `--no-sanitize` para desabilitar.
+- **`cfg.Clear()` movido para `defer`**: a chave de API agora é zerada apenas no retorno
+  do comando, não imediatamente após copiar para o client.
+- **Modelo default hardcoded**: se `TLDR_DEFAULT_MODEL` não for definido, usa
+  `deepseek/deepseek-v4-flash` como fallback.
+
+### 🟢 Novas Funcionalidades
+
+- **Flag `--no-sanitize`**: desabilita a remoção de ANSI escape codes da saída.
+- **Validação de idioma**: formato do `--lang` é validado (ex: `pt-br`, `en`, `zh-CN`).
+- **Redação estendida de credenciais**: cobre DeepSeek, Anthropic, GitHub PAT, JWT,
+  e fallback genérico para strings de 40+ caracteres.
+- **Erros preservam cadeia original**: `classifyAPIError` agora retorna `*redactedError`
+  que preserva a cadeia de erros para `errors.Is`/`errors.As`.
+
+### 🔧 Melhorias Técnicas
+
+- TOCTOU eliminado em `ReadFromFile`: usa `os.Open` + `f.Stat()` em vez de `os.Stat` + `os.ReadFile`.
+- TOCTOU eliminado em `ReadFromStdin`: verificação de terminal movida para dentro da função.
+- Goroutine leak evitado em timeout: `os.Stdin.Close()` desbloqueia a leitura.
+- Teste de timeout de stdin adicionado.
+- `summarizer.New()` valida todos os campos obrigatórios.
+
+---
+
 ## Fase 2 — Configuração via variáveis de ambiente (2026-07-03)
 
 ### 🔄 Mudanças na API Interna

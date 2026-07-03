@@ -1,28 +1,14 @@
-// Package integration contém testes de integração com a API.
+//go:build integration
+
+// Package integration_test contém testes de integração com a API real.
 //
-// Estratégia de testes de integração:
+// Estes testes compilam apenas com a tag "integration" ativa, evitando
+// que sejam executados acidentalmente durante go test ./... sem a chave de API.
 //
-// Idealmente, usaríamos um gravador/replayer HTTP como o Cassete
-// (https://github.com/vhs/cassete) — mas o pacote não está disponível
-// publicamente.
+// Uso:
 //
-// Abordagem atual:
-//   - Testes com httptest.Server (ver internal/summarizer/summarizer_test.go)
-//     simulam respostas da API sem chamadas reais.
-//   - Para testes com API real (end-to-end), execute:
-//     TLDR_API_KEY=sua-chave go test -tags=integration ./internal/integration/
-//
-// Para adicionar um replayer HTTP no futuro:
-//  1. Grave as respostas da API em arquivos JSON (cassetes)
-//  2. Use um middleware HTTP que retorna a resposta gravada
-//  3. Configure a URL base do summarizer para o servidor local
-//
-// Exemplo de cassete (armazenado em testdata/):
-//
-//	testdata/
-//	└── cassetes/
-//	    └── summarization_ptbr.json
-package integration
+//	TLDR_API_KEY=sk-... go test -tags=integration -v ./internal/integration/
+package integration_test
 
 import (
 	"context"
@@ -56,12 +42,15 @@ func TestSummarizeRealAPI(t *testing.T) {
 		model = "deepseek/deepseek-v4-flash"
 	}
 
-	s := summarizer.New(summarizer.Config{
+	s, err := summarizer.New(summarizer.Config{
 		APIKey:  apiKey,
 		BaseURL: baseURL,
 		Model:   model,
 		Timeout: 60 * time.Second,
 	})
+	if err != nil {
+		t.Fatalf("summarizer.New() erro: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()

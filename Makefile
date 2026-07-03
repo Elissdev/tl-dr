@@ -2,11 +2,13 @@
 
 BINARY_NAME ?= tldr
 BUILD_DIR ?= build
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS = -ldflags="-X github.com/Elissdev/tl-dr/cmd.version=$(VERSION)"
 
 build:
-	@echo "Building $(BINARY_NAME)..."
+	@echo "Building $(BINARY_NAME) version $(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY_NAME) .
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
 
 test:
 	@echo "Running tests..."

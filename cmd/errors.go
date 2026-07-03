@@ -2,17 +2,17 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
 )
 
 // ExitCode representa um código de saída para o programa.
 type ExitCode int
 
 const (
-	ExitSuccess       ExitCode = 0
-	ExitGenericError  ExitCode = 1
-	ExitAPIError      ExitCode = 2
-	ExitArgumentError ExitCode = 3
+	ExitOK       ExitCode = 0
+	ExitInternal ExitCode = 1
+	ExitAPI      ExitCode = 2
+	ExitArgs     ExitCode = 3
+	ExitTimeout  ExitCode = 4
 )
 
 // ExitError é um erro que carrega um código de saída específico.
@@ -32,14 +32,14 @@ func (e *ExitError) Unwrap() error {
 
 // NewExitError cria um novo ExitError com o código e mensagem fornecidos.
 // Use esta função quando você tem uma mensagem estática (sem erro encapsulado).
-// Exemplo: return NewExitError(ExitArgumentError, "idioma é obrigatório")
+// Exemplo: return NewExitError(ExitArgs, "idioma é obrigatório")
 func NewExitError(code ExitCode, msg string) *ExitError {
-	return &ExitError{Code: code, Err: fmt.Errorf("%s", msg)}
+	return &ExitError{Code: code, Err: errors.New(msg)}
 }
 
 // WrapExitError envolve um erro existente com um código de saída.
 // Use esta função quando você já tem um erro de outra camada (ex: I/O, API).
-// Exemplo: return WrapExitError(ExitGenericError, err)
+// Exemplo: return WrapExitError(ExitInternal, err)
 func WrapExitError(code ExitCode, err error) *ExitError {
 	return &ExitError{Code: code, Err: err}
 }
@@ -48,7 +48,7 @@ func WrapExitError(code ExitCode, err error) *ExitError {
 func IsAPIError(err error) bool {
 	var e *ExitError
 	if errors.As(err, &e) {
-		return e.Code == ExitAPIError
+		return e.Code == ExitAPI
 	}
 	return false
 }
@@ -57,7 +57,7 @@ func IsAPIError(err error) bool {
 func IsArgumentError(err error) bool {
 	var e *ExitError
 	if errors.As(err, &e) {
-		return e.Code == ExitArgumentError
+		return e.Code == ExitArgs
 	}
 	return false
 }

@@ -76,7 +76,7 @@ if err != nil {
 - `TestLoad` — `TLDR_TIMEOUT` inválido retorna erro (antes usava default silenciosamente)
 - `TestLoad` — sem API key agora verifica campos do `Config` retornado (APIKey vazia, BaseURL default, DefaultModel default)
 - `TestClear` — double-clear não causa pânico
-- `TestIsStdinAvailable` — simula pipe real com `os.Pipe()` (true) e terminal (false, sem panic)
+- `TestIsStdinRedirected` — simula pipe real com `os.Pipe()` (true) e terminal (false, sem panic)
 
 ### Testes melhorados
 - `TestProtectedAPIKeyClear` — verificação byte a byte do buffer interno
@@ -87,8 +87,8 @@ if err != nil {
 
 - Comentários em `NewExitError`/`WrapExitError` com exemplos de uso:
   ```go
-  // Exemplo: return NewExitError(ExitArgumentError, "idioma é obrigatório")
-  // Exemplo: return WrapExitError(ExitGenericError, err)
+  // Exemplo: return NewExitError(ExitArgs, "idioma é obrigatório")
+  // Exemplo: return WrapExitError(ExitInternal, err)
   ```
 - Comentário de segurança sobre a ordem do `cfg.Clear()` em `root.go`
 - Documentação da dupla validação de timeout em `summarizer.New()` (redundância segura)

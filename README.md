@@ -36,10 +36,16 @@ cat texto.txt | tldr --prompt "Resuma para um leigo no assunto" --lang pt-br
 
 | Flag            | Alias | Obrigatória | Descrição                                      |
 |-----------------|-------|-------------|------------------------------------------------|
-| `--lang`        | `-l`  | ✅ Sim      | Idioma do resumo (ex: `pt-br`, `en`, `es`)     |
+| `--lang`        | `-l`  | ✅ Sim¹     | Idioma do resumo (ex: `pt-br`, `en`, `es`)     |
 | `--model`       | `-m`  | ❌ Não      | Modelo a usar (default: `deepseek/deepseek-v4-flash`) |
 | `--prompt`      | `-p`  | ❌ Não      | Prompt customizado para o resumo               |
-| `--help`        |       | ❌ Não      | Exibe ajuda                                    |
+| `--timeout`     | `-t`  | ❌ Não      | Timeout da requisição em segundos (default: 30) |
+| `--no-sanitize` |       | ❌ Não      | Desabilita sanitização de escape codes ANSI na saída |
+| `--version`     | `-v`  | ❌ Não      | Exibe a versão                                  |
+| `--help`        | `-h`  | ❌ Não      | Exibe ajuda                                    |
+
+> ¹ O idioma também pode ser definido via variável de ambiente `TLDR_DEFAULT_LANG`.
+> A flag `--lang` tem precedência sobre a variável de ambiente.
 
 ## Variáveis de Ambiente
 
@@ -49,16 +55,20 @@ cat texto.txt | tldr --prompt "Resuma para um leigo no assunto" --lang pt-br
 | `TLDR_BASE_URL`      | ❌ Não      | `https://api.apiario.dev/v1`      | URL base da API (compatível OpenAI)    |
 | `TLDR_DEFAULT_MODEL` | ❌ Não      | `deepseek/deepseek-v4-flash`      | Modelo padrão                          |
 | `TLDR_DEFAULT_LANG`  | ❌ Não      | —                                 | Idioma padrão                          |
-| `TLDR_TIMEOUT`       | ❌ Não      | `30`                              | Timeout da requisição em segundos      |
+| `TLDR_TIMEOUT`       | ❌ Não      | `30`                              | Timeout da requisição em segundos (pode ser sobrescrito com --timeout) |
+
+> **⚠️ Segurança:** O arquivo `.env` contém sua chave de API em texto claro.
+> Mantenha-o com permissão `600` (`chmod 600 .env`) e **nunca** o commite no Git.
 
 ## Exit Codes
 
-| Código | Significado            |
-|--------|------------------------|
-| `0`    | Sucesso                |
-| `1`    | Erro genérico          |
-| `2`    | Erro de API            |
-| `3`    | Erro de argumento      |
+| Código | Significado               |
+|--------|---------------------------|
+| `0`    | Sucesso                   |
+| `1`    | Erro interno/genérico     |
+| `2`    | Erro de API               |
+| `3`    | Erro de argumento         |
+| `4`    | Timeout na requisição     |
 
 ## Exemplos
 
@@ -80,7 +90,19 @@ tldr artigo.txt --lang en --model gpt-4
 cat relatorio.txt | tldr --lang pt-br --prompt "Extraia apenas os números e dados estatísticos"
 ```
 
-### 4. Pipe para outras ferramentas
+### 4. Timeout customizado
+
+```bash
+cat texto_grande.txt | tldr --lang pt-br --timeout 120
+```
+
+### 5. Versionamento
+
+```bash
+tldr --version
+```
+
+### 6. Pipe para outras ferramentas
 
 ```bash
 tldr --lang en < document.txt | grep -i importante

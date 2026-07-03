@@ -14,7 +14,7 @@ const MaxInputSize int64 = 10 * 1024 * 1024 // 10 MB
 var ErrInputTooLarge = fmt.Errorf("entrada muito grande — tamanho máximo permitido: %d bytes", MaxInputSize)
 
 // ReadFile lê o conteúdo de um arquivo. Apenas UTF-8 é suportado.
-func ReadFile(path string) (string, error) {
+func ReadFromFile(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", fmt.Errorf("não foi possível acessar %s: %w", path, err)
@@ -40,7 +40,7 @@ func ReadFile(path string) (string, error) {
 
 // ReadStdin lê o conteúdo da entrada padrão. Apenas UTF-8 é suportado.
 // Se a entrada exceder MaxInputSize, retorna ErrInputTooLarge.
-func ReadStdin() (string, error) {
+func ReadFromStdin() (string, error) {
 	// Lê MaxInputSize + 1 bytes para detectar se a entrada foi truncada
 	limit := MaxInputSize + 1
 	limitedReader := io.LimitReader(os.Stdin, limit)
@@ -71,4 +71,17 @@ func IsStdinAvailable() bool {
 		return false
 	}
 	return (stat.Mode() & os.ModeCharDevice) == 0
+}
+
+// ReadInput lê o texto de entrada de arquivo ou stdin, seguindo a ordem
+// de precedência: argumento posicional (arquivo) > stdin > erro.
+// O parâmetro args são os argumentos posicionais do CLI.
+func ReadInput(args []string) (string, error) {
+	if len(args) > 0 {
+		return ReadFromFile(args[0])
+	}
+	if !IsStdinAvailable() {
+		return "", fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+	}
+	return ReadFromStdin()
 }

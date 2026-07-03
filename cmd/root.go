@@ -49,33 +49,13 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 		}
 
 		// 4. Ler entrada
-		var text string
-		var inputSource string
-		if len(args) > 0 {
-			inputSource = "arquivo"
-			data, err := input.ReadFile(args[0])
-			if err != nil {
-				return WrapExitError(ExitGenericError,
-					fmt.Errorf("erro ao ler arquivo: %w", err))
-			}
-			text = data
-		} else {
-			inputSource = "stdin"
-			if !input.IsStdinAvailable() {
-				return NewExitError(ExitArgumentError,
-					"nenhum texto fornecido — passe um arquivo ou pipe via stdin")
-			}
-			data, err := input.ReadStdin()
-			if err != nil {
-				return WrapExitError(ExitGenericError,
-					fmt.Errorf("erro ao ler stdin: %w", err))
-			}
-			text = data
+		text, err := input.ReadInput(args)
+		if err != nil {
+			return WrapExitError(ExitArgumentError, err)
 		}
-
 		if text == "" {
 			return NewExitError(ExitArgumentError,
-				fmt.Sprintf("%s vazio — forneça um texto para resumir", inputSource))
+				"entrada vazia — forneça um texto para resumir")
 		}
 
 		// 5. Construir prompt

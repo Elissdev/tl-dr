@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestReadFile(t *testing.T) {
+func TestReadFromFile(t *testing.T) {
 	t.Run("arquivo normal", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "test.txt")
@@ -16,17 +16,17 @@ func TestReadFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		result, err := ReadFile(path)
+		result, err := ReadFromFile(path)
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
 		if result != expected {
-			t.Errorf("ReadFile = %q, want %q", result, expected)
+			t.Errorf("ReadFromFile = %q, want %q", result, expected)
 		}
 	})
 
 	t.Run("arquivo inexistente", func(t *testing.T) {
-		_, err := ReadFile("/nao/existe/arquivo.txt")
+		_, err := ReadFromFile("/nao/existe/arquivo.txt")
 		if err == nil {
 			t.Fatal("esperava erro, mas retornou nil")
 		}
@@ -34,7 +34,7 @@ func TestReadFile(t *testing.T) {
 
 	t.Run("diretório", func(t *testing.T) {
 		dir := t.TempDir()
-		_, err := ReadFile(dir)
+		_, err := ReadFromFile(dir)
 		if err == nil {
 			t.Fatal("esperava erro para diretório, mas retornou nil")
 		}
@@ -49,7 +49,7 @@ func TestReadFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := ReadFile(path)
+		_, err := ReadFromFile(path)
 		if err == nil {
 			t.Fatal("esperava erro de tamanho, mas retornou nil")
 		}
@@ -63,7 +63,7 @@ func TestReadFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		_, err := ReadFile(path)
+		_, err := ReadFromFile(path)
 		if err == nil {
 			t.Fatal("esperava erro de UTF-8, mas retornou nil")
 		}
@@ -76,12 +76,12 @@ func TestReadFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		result, err := ReadFile(path)
+		result, err := ReadFromFile(path)
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
 		if result != "" {
-			t.Errorf("ReadFile = %q, want %q", result, "")
+			t.Errorf("ReadFromFile = %q, want %q", result, "")
 		}
 	})
 
@@ -95,7 +95,7 @@ func TestReadFile(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		result, err := ReadFile(path)
+		result, err := ReadFromFile(path)
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
@@ -105,7 +105,7 @@ func TestReadFile(t *testing.T) {
 	})
 }
 
-func TestReadStdin(t *testing.T) {
+func TestReadFromStdin(t *testing.T) {
 	t.Run("stdin com dados", func(t *testing.T) {
 		content := "Texto de entrada"
 		original := os.Stdin
@@ -121,13 +121,13 @@ func TestReadStdin(t *testing.T) {
 		}
 		w.Close()
 
-		result, err := ReadStdin()
+		result, err := ReadFromStdin()
 		os.Stdin = original
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
 		if result != content {
-			t.Errorf("ReadStdin = %q, want %q", result, content)
+			t.Errorf("ReadFromStdin = %q, want %q", result, content)
 		}
 	})
 
@@ -140,13 +140,13 @@ func TestReadStdin(t *testing.T) {
 		os.Stdin = r
 		w.Close()
 
-		result, err := ReadStdin()
+		result, err := ReadFromStdin()
 		os.Stdin = original
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
 		if result != "" {
-			t.Errorf("ReadStdin = %q, want %q", result, "")
+			t.Errorf("ReadFromStdin = %q, want %q", result, "")
 		}
 	})
 
@@ -164,7 +164,7 @@ func TestReadStdin(t *testing.T) {
 		}
 		w.Close()
 
-		_, err = ReadStdin()
+		_, err = ReadFromStdin()
 		os.Stdin = original
 		if err == nil {
 			t.Fatal("esperava erro de UTF-8, mas retornou nil")
@@ -200,5 +200,92 @@ func TestIsStdinAvailable(t *testing.T) {
 		// que a função não panic e lida com o caso corretamente.
 		result := IsStdinAvailable()
 		t.Logf("IsStdinAvailable() em terminal = %v", result)
+	})
+}
+
+func TestReadInput(t *testing.T) {
+	t.Run("arquivo como argumento", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "test.txt")
+		expected := "conteúdo do arquivo"
+		if err := os.WriteFile(path, []byte(expected), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := ReadInput([]string{path})
+		if err != nil {
+			t.Fatalf("erro inesperado: %v", err)
+		}
+		if result != expected {
+			t.Errorf("ReadInput = %q, want %q", result, expected)
+		}
+	})
+
+	t.Run("stdin quando não há argumento", func(t *testing.T) {
+		content := "dados do pipe"
+		original := os.Stdin
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdin = r
+
+		_, writeErr := w.Write([]byte(content))
+		if writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		w.Close()
+
+		result, err := ReadInput([]string{})
+		os.Stdin = original
+		if err != nil {
+			t.Fatalf("erro inesperado: %v", err)
+		}
+		if result != content {
+			t.Errorf("ReadInput = %q, want %q", result, content)
+		}
+	})
+
+	t.Run("arquivo inexistente retorna erro", func(t *testing.T) {
+		_, err := ReadInput([]string{"/nao/existe/arquivo.txt"})
+		if err == nil {
+			t.Fatal("esperava erro, mas retornou nil")
+		}
+	})
+
+	t.Run("sem argumento e sem stdin retorna erro", func(t *testing.T) {
+		_, err := ReadInput([]string{})
+		if err == nil {
+			t.Fatal("esperava erro, mas retornou nil")
+		}
+	})
+
+	t.Run("arquivo vazio", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "empty.txt")
+		if err := os.WriteFile(path, []byte{}, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := ReadInput([]string{path})
+		if err != nil {
+			t.Fatalf("erro inesperado: %v", err)
+		}
+		if result != "" {
+			t.Errorf("ReadInput = %q, want %q", result, "")
+		}
+	})
+
+	t.Run("UTF-8 inválido retorna erro", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "invalid.txt")
+		if err := os.WriteFile(path, []byte{0xFF, 0xFE, 0x00}, 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := ReadInput([]string{path})
+		if err == nil {
+			t.Fatal("esperava erro de UTF-8, mas retornou nil")
+		}
 	})
 }

@@ -28,6 +28,9 @@ cat text.md | tldr --lang pt-br --model deepseek/deepseek-v4-flash
 # Resume com prompt customizado
 cat text.md | tldr --prompt "Resuma para um leigo no assunto" --lang pt-br
 
+# Resume com modo verbose (debug no stderr)
+cat text.md | tldr --lang pt-br --verbose
+
 # Resume de arquivo
 tldr arquivo.txt --lang en
 ```
@@ -62,10 +65,14 @@ Se o texto de entrada exceder o limite de contexto do modelo, o programa **envia
 
 | Stream | Conteúdo |
 |--------|----------|
-| **stdout** | Apenas o resumo gerado |
-| **stderr** | Logs de debug, progresso, erros |
+| **stdout** | Apenas o resumo gerado (em tempo real via streaming) |
+| **stderr** | Logs de debug, progresso, erros, modo verbose |
 
 Isso permite redirecionar ou encadear a saída: `tldr --lang pt-br < text.txt | grep ...`
+
+O resumo é exibido **token por token** em tempo real (streaming) via `SummarizeStream()`.
+Em caso de erro durante o streaming, a mensagem de erro vai para o stderr e a saída parcial
+já escrita no stdout é preservada.
 
 ### 4.2. Exit Codes
 
@@ -185,8 +192,12 @@ tl-dr/
 | Leitura de arquivo | Unitário |
 | Leitura de stdin | Unitário |
 | Construção do prompt | Unitário |
-| Chamada à API | Integração (com cassete) |
-| Tratamento de erros da API | Integração (com cassete) |
+| Chamada à API | Unitário (httptest) + Integração (opcional) |
+| Streaming da resposta | Unitário (httptest) |
+| Tratamento de erros da API (401, 429, 500) | Unitário (httptest) |
+| Contexto excedido (400/413) | Unitário (httptest) |
+| Modo verbose | Unitário |
+| Multi-plataforma | CI (build para 4 plataformas) |
 
 ---
 
@@ -197,8 +208,9 @@ tl-dr/
 | Plataforma | Arquitetura |
 |------------|-------------|
 | Linux | `amd64` |
-
-*Futuro: darwin/amd64, darwin/arm64, windows/amd64*
+| macOS (Intel) | `amd64` |
+| macOS (Apple Silicon) | `arm64` |
+| Windows | `amd64` |
 
 ### 10.2. Distribuição
 
@@ -214,8 +226,8 @@ Binários pré-compilados disponíveis no **GitHub Releases**.
 |----------|---------|-------|
 | **test** | `push` / `pull_request` | `go test ./...` (com cassetes) |
 | **lint** | `push` / `pull_request` | `golangci-lint` |
-| **build** | `push` / `pull_request` | Compila para `linux/amd64` |
-| **release** | Tag `v*` | Sobe binário no GitHub Releases |
+| **build** | `push` / `pull_request` | Compila para `linux/amd64` (mais artefatos multi-plataforma) |
+| **release** | Tag `v*` | Sobe binários para Linux, macOS Intel, macOS Apple Silicon e Windows |
 
 ---
 
@@ -255,4 +267,6 @@ Nada além disso é necessário para o primeiro release.
 | Codificação | Apenas UTF-8 |
 | Configuração | Apenas variáveis de ambiente |
 | Testes de API | Cassete (grava uma vez, replay sempre) |
-| Streaming da resposta | (a decidir — pode ser futuro) |
+| Streaming da resposta | ✅ Implementado — `SummarizeStream()` via SDK NewStreaming |
+| Modo verbose | Flag `--verbose` / `-v` exibe debug no stderr |
+| Plataformas alvo | Linux amd64, macOS amd64/arm64, Windows amd64 |

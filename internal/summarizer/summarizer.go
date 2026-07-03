@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/openai/openai-go"
@@ -82,6 +83,76 @@ func (s *Summarizer) Summarize(ctx context.Context, systemPrompt, userText strin
 		return "", classifyAPIError(err)
 	}
 
+	return extractContent(chat)
+}
+
+// SummarizeStream envia um prompt e texto para a API e retorna um canal
+// que recebe chunks do resumo em tempo real (streaming).
+// O canal é fechado quando o streaming termina ou ocorre um erro.
+func (s *Summarizer) SummarizeStream(ctx context.Context, systemPrompt, userText string) (<-chan StreamChunk, error) {
+	stream := s.client.Chat.Completions.NewStreaming(ctx, openai.ChatCompletionNewParams{
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			{
+				OfSystem: &openai.ChatCompletionSystemMessageParam{
+					Content: openai.ChatCompletionSystemMessageParamContentUnion{
+						OfString: openai.String(systemPrompt),
+					},
+				},
+			},
+			{
+				OfUser: &openai.ChatCompletionUserMessageParam{
+					Content: openai.ChatCompletionUserMessageParamContentUnion{
+						OfString: openai.String(userText),
+					},
+				},
+			},
+		},
+		Model: shared.ChatModel(s.model),
+	})
+
+	ch := make(chan StreamChunk, 64)
+
+	go func() {
+		defer close(ch)
+		defer stream.Close()
+
+		for stream.Next() {
+			chunk := stream.Current()
+			if len(chunk.Choices) == 0 {
+				continue
+			}
+
+			choice := chunk.Choices[0]
+
+			// Verifica finish_reason em cada chunk
+			if choice.FinishReason == "length" {
+				ch <- StreamChunk{Err: fmt.Errorf("resumo truncado: o modelo atingiu o limite de tokens")}
+				return
+			}
+			if choice.FinishReason == "content_filter" {
+				ch <- StreamChunk{Err: fmt.Errorf("resumo bloqueado pelo filtro de conteúdo da API")}
+				return
+			}
+
+			ch <- StreamChunk{Text: choice.Delta.Content}
+		}
+
+		if err := stream.Err(); err != nil {
+			ch <- StreamChunk{Err: classifyAPIError(err)}
+		}
+	}()
+
+	return ch, nil
+}
+
+// StreamChunk representa um pedaço do resumo recebido via streaming.
+type StreamChunk struct {
+	Text string
+	Err  error
+}
+
+// extractContent extrai o conteúdo da resposta da API.
+func extractContent(chat *openai.ChatCompletion) (string, error) {
 	if len(chat.Choices) == 0 {
 		return "", fmt.Errorf("API retornou resposta vazia")
 	}
@@ -97,6 +168,28 @@ func (s *Summarizer) Summarize(ctx context.Context, systemPrompt, userText strin
 	return choice.Message.Content, nil
 }
 
+// isContextLengthError verifica se a mensagem de erro indica que o texto
+// excedeu o limite de contexto do modelo.
+func isContextLengthError(msg string) bool {
+	keywords := []string{
+		"context length",
+		"maximum context",
+		"token limit",
+		"context_window",
+		"context_length_exceeded",
+		"too many tokens",
+		"request too large",
+		"max_tokens",
+	}
+	msgLower := strings.ToLower(msg)
+	for _, kw := range keywords {
+		if strings.Contains(msgLower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // classifyAPIError mapeia erros da API para mensagens mais amigáveis e
 // remove qualquer vazamento acidental de credenciais ou tokens.
 func classifyAPIError(err error) error {
@@ -106,6 +199,11 @@ func classifyAPIError(err error) error {
 		msg := apiKeyPattern.ReplaceAllString(apiErr.Error(), "***REDACTED***")
 
 		switch apiErr.StatusCode {
+		case 400, 413:
+			if isContextLengthError(msg) {
+				return fmt.Errorf("texto muito longo para o contexto do modelo — tente um texto menor ou use --model com contexto maior")
+			}
+			return fmt.Errorf("erro na requisição (HTTP %d): %s", apiErr.StatusCode, msg)
 		case 401:
 			return fmt.Errorf("credenciais inválidas — verifique TLDR_API_KEY")
 		case 429:

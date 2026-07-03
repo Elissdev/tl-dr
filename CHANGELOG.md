@@ -1,5 +1,46 @@
 # Changelog
 
+## Fase 2 — Streaming, Verbose e Multi-Plataforma (2026-07-03)
+
+### 🚀 Funcionalidades Novas
+
+- **Streaming de resposta**: O resumo é exibido token por token em tempo real (via `NewStreaming` do SDK OpenAI)
+- **Modo verbose (`--verbose` / `-v`)**: Exibe informações de depuração no stderr:
+  - Fonte de entrada (arquivo/stdin)
+  - Idioma e modelo selecionados
+  - Tamanho do texto
+  - Prompt enviado à API
+  - Indicador de progresso "⚡ Gerando resumo..."
+  - Resumo final com contagem de caracteres
+- **Multi-plataforma**: Builds para Linux (amd64), macOS Intel (amd64), macOS Apple Silicon (arm64) e Windows (amd64)
+
+### 🔒 Melhorias no Tratamento de Erros
+
+- **Detecção de contexto excedido (HTTP 400/413)**: Mensagem específica quando o texto excede o limite do modelo, sugerindo usar `--model` com contexto maior
+- Função `isContextLengthError()` que detecta padrões como `context_length_exceeded`, `too many tokens`, `request too large`, etc.
+
+### 🧪 Novos Testes
+
+- **Testes de streaming**: Sucesso, erro 401, finish_reason `length` — cobrindo o fluxo completo de `SummarizeStream`
+- **Testes de `extractContent`**: Normal, choices vazio, `length`, `content_filter`
+- **Testes de `isContextLengthError`**: 12 casos incluindo todos os padrões de contexto excedido e falsos positivos
+- **Testes de erro 400 (context)**: Verifica mensagem específica para contexto excedido
+- **Testes de erro 413**: Verifica detecção de "request too large"
+- **Testes de erro 400 genérico**: Verifica que erros 400 sem relação com contexto são tratados genericamente
+- **Testes de flags**: Verifica existência e valores padrão de `--verbose`, `--lang`, `--model`, `--prompt`, e alias `-v`
+- **Teste de `MaximumNArgs`**: Valida regra de argumentos do Cobra
+
+### 📦 Build & Distribuição
+
+- `make build-all`: Compila para todas as 4 plataformas
+- CI agora faz upload de artefatos para todas as plataformas
+- Release publica binários para Linux, macOS (Intel + Apple Silicon) e Windows
+
+### 📝 Documentação
+
+- README atualizado com flag `--verbose` e exemplo de uso
+- README atualizado com exemplo de saída do modo verbose
+
 ## Fase 1 — MVP (2026-07-02)
 
 ### 🚀 Funcionalidades Implementadas

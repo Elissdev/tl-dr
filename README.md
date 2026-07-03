@@ -39,6 +39,7 @@ cat texto.txt | tldr --prompt "Resuma para um leigo no assunto" --lang pt-br
 | `--lang`        | `-l`  | ✅ Sim      | Idioma do resumo (ex: `pt-br`, `en`, `es`)     |
 | `--model`       | `-m`  | ❌ Não      | Modelo a usar (default: `deepseek/deepseek-v4-flash`) |
 | `--prompt`      | `-p`  | ❌ Não      | Prompt customizado para o resumo               |
+| `--verbose`     | `-v`  | ❌ Não      | Exibe informações de depuração no stderr       |
 | `--help`        |       | ❌ Não      | Exibe ajuda                                    |
 
 ## Variáveis de Ambiente
@@ -80,7 +81,13 @@ tldr artigo.txt --lang en --model gpt-4
 cat relatorio.txt | tldr --lang pt-br --prompt "Extraia apenas os números e dados estatísticos"
 ```
 
-### 4. Pipe para outras ferramentas
+### 4. Modo verbose
+
+```bash
+cat texto.txt | tldr --lang pt-br --verbose
+```
+
+### 5. Pipe para outras ferramentas
 
 ```bash
 tldr --lang en < document.txt | grep -i importante

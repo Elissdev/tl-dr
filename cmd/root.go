@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Elissdev/tl-dr/internal/config"
 	"github.com/Elissdev/tl-dr/internal/input"
@@ -13,6 +14,7 @@ var (
 	lang             string
 	model            string
 	customPromptFlag string
+	verbose          bool
 )
 
 var rootCmd = &cobra.Command{
@@ -80,10 +82,22 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 				fmt.Sprintf("%s vazio — forneça um texto para resumir", inputSource))
 		}
 
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "📄 Lendo de %s...\n", inputSource)
+			fmt.Fprintf(cmd.ErrOrStderr(), "🔤 Idioma: %s\n", resolvedLang)
+			fmt.Fprintf(cmd.ErrOrStderr(), "🤖 Modelo: %s\n", resolvedModel)
+			fmt.Fprintf(cmd.ErrOrStderr(), "📏 Tamanho do texto: %d caracteres\n", len(text))
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n")
+		}
+
 		// 6. Construir prompt
 		finalPrompt := buildPrompt(resolvedLang, customPromptFlag)
 
-		// 7. Chamar API
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "📝 Prompt: %s\n\n", finalPrompt)
+		}
+
+		// 7. Chamar API (com streaming)
 		s := summarizer.New(summarizer.Config{
 			APIKey:  cfg.APIKey,
 			BaseURL: cfg.BaseURL,
@@ -95,14 +109,37 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 		// podemos zerar a nossa cópia local.
 		cfg.Clear()
 
-		summary, err := s.Summarize(cmd.Context(), finalPrompt, text)
+		if verbose {
+			fmt.Fprintf(cmd.ErrOrStderr(), "⚡ Gerando resumo...\n\n")
+		}
+
+		ch, err := s.SummarizeStream(cmd.Context(), finalPrompt, text)
 		if err != nil {
 			return WrapExitError(ExitAPIError,
 				fmt.Errorf("erro na API: %w", err))
 		}
 
-		// 8. Escrever saída no stdout
-		fmt.Print(summary)
+		// 8. Consumir streaming e escrever no stdout
+		var summary strings.Builder
+		for chunk := range ch {
+			if chunk.Err != nil {
+				// Se já escrevemos algo no stdout, pulamos linha antes do erro
+				if summary.Len() > 0 {
+					fmt.Fprintln(cmd.ErrOrStderr())
+				}
+				return WrapExitError(ExitAPIError,
+					fmt.Errorf("erro na API: %w", chunk.Err))
+			}
+			fmt.Print(chunk.Text)
+			summary.WriteString(chunk.Text)
+		}
+
+		// Linha final para separar resumo do próximo prompt
+		fmt.Println()
+
+		if verbose && summary.Len() > 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(), "\n✅ Resumo concluído (%d caracteres)\n", summary.Len())
+		}
 
 		return nil
 	},
@@ -118,6 +155,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&lang, "lang", "l", "", "Idioma do resumo (ex: pt-br, en, es)")
 	rootCmd.Flags().StringVarP(&model, "model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
 	rootCmd.Flags().StringVarP(&customPromptFlag, "prompt", "p", "", "Prompt customizado para o resumo")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Exibe informações de depuração no stderr")
 
 	// --lang é validado manualmente no RunE (pode vir via TLDR_DEFAULT_LANG)
 }

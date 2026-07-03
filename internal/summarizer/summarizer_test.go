@@ -258,6 +258,94 @@ func TestSummarize(t *testing.T) {
 		}
 	})
 
+	t.Run("erro 400 da API (context length)", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{
+				"error": {
+					"message": "context_length_exceeded: too many tokens",
+					"type": "invalid_request_error",
+					"code": "context_length_exceeded"
+				}
+			}`)
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Fatal("Summarize() com 400 = nil, want erro")
+		}
+		if !strings.Contains(err.Error(), "contexto do modelo") {
+			t.Errorf("erro = %q, want 'contexto do modelo'", err.Error())
+		}
+	})
+
+	t.Run("erro 413 da API (request too large)", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			fmt.Fprint(w, `{
+				"error": {
+					"message": "Request too large for model context",
+					"type": "invalid_request_error"
+				}
+			}`)
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Fatal("Summarize() com 413 = nil, want erro")
+		}
+		if !strings.Contains(err.Error(), "contexto do modelo") {
+			t.Errorf("erro = %q, want 'contexto do modelo'", err.Error())
+		}
+	})
+
+	t.Run("erro 400 genérico (não context)", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{
+				"error": {
+					"message": "Invalid parameter: temperature must be between 0 and 2",
+					"type": "invalid_request_error"
+				}
+			}`)
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Fatal("Summarize() com 400 genérico = nil, want erro")
+		}
+		if !strings.Contains(err.Error(), "erro na requisição") {
+			t.Errorf("erro = %q, want 'erro na requisição'", err.Error())
+		}
+	})
+
 	t.Run("erro 500 da API", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -286,6 +374,211 @@ func TestSummarize(t *testing.T) {
 			t.Errorf("erro = %q, want 'indisponível'", err.Error())
 		}
 	})
+}
+
+func TestSummarizeStream(t *testing.T) {
+	t.Run("streaming com sucesso", func(t *testing.T) {
+		var chunks []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Connection", "keep-alive")
+
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Este \"},\"finish_reason\":null}]}\n\n")
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"é o \"},\"finish_reason\":null}]}\n\n")
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"resumo.\"},\"finish_reason\":\"stop\"}]}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		ch, err := s.SummarizeStream(context.Background(), "Sistema", "Texto do usuário")
+		if err != nil {
+			t.Fatalf("SummarizeStream() erro inesperado: %v", err)
+		}
+
+		for chunk := range ch {
+			if chunk.Err != nil {
+				t.Fatalf("chunk com erro: %v", chunk.Err)
+			}
+			chunks = append(chunks, chunk.Text)
+		}
+
+		expected := []string{"Este ", "é o ", "resumo."}
+		if len(chunks) != len(expected) {
+			t.Errorf("número de chunks = %d, want %d", len(chunks), len(expected))
+		}
+		for i := range expected {
+			if i < len(chunks) && chunks[i] != expected[i] {
+				t.Errorf("chunk[%d] = %q, want %q", i, chunks[i], expected[i])
+			}
+		}
+	})
+
+	t.Run("streaming com erro da API", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{
+				"error": {
+					"message": "Incorrect API key provided",
+					"type": "authentication_error"
+				}
+			}`)
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		_, err := s.SummarizeStream(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Fatal("SummarizeStream() com 401 = nil, want erro")
+		}
+		if !strings.Contains(err.Error(), "credenciais") {
+			t.Errorf("erro = %q, want 'credenciais'", err.Error())
+		}
+	})
+
+	t.Run("streaming com finish_reason = length", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Resumo parcial...\"},\"finish_reason\":\"length\"}]}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		defer server.Close()
+
+		s := New(Config{
+			APIKey:  "sk-test",
+			BaseURL: server.URL,
+			Model:   "test-model",
+			Timeout: 5 * time.Second,
+		})
+
+		ch, err := s.SummarizeStream(context.Background(), "Sistema", "Texto")
+		if err != nil {
+			t.Fatalf("SummarizeStream() erro inesperado: %v", err)
+		}
+
+		var lastErr error
+		for chunk := range ch {
+			if chunk.Err != nil {
+				lastErr = chunk.Err
+			}
+		}
+
+		if lastErr == nil {
+			t.Fatal("esperava erro de truncamento, mas não houve")
+		}
+		if !strings.Contains(lastErr.Error(), "truncado") {
+			t.Errorf("erro = %q, want 'truncado'", lastErr.Error())
+		}
+	})
+}
+
+func TestExtractContent(t *testing.T) {
+	t.Run("content normal", func(t *testing.T) {
+		chat := &openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Content: "Resumo aqui",
+					},
+					FinishReason: "stop",
+				},
+			},
+		}
+		result, err := extractContent(chat)
+		if err != nil {
+			t.Fatalf("extractContent() erro inesperado: %v", err)
+		}
+		if result != "Resumo aqui" {
+			t.Errorf("extractContent() = %q, want %q", result, "Resumo aqui")
+		}
+	})
+
+	t.Run("choices vazio", func(t *testing.T) {
+		chat := &openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{},
+		}
+		_, err := extractContent(chat)
+		if err == nil {
+			t.Fatal("extractContent() com choices vazio = nil, want erro")
+		}
+	})
+
+	t.Run("length finish reason", func(t *testing.T) {
+		chat := &openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Content: "parcial",
+					},
+					FinishReason: "length",
+				},
+			},
+		}
+		_, err := extractContent(chat)
+		if err == nil {
+			t.Fatal("extractContent() com length = nil, want erro")
+		}
+	})
+
+	t.Run("content_filter finish reason", func(t *testing.T) {
+		chat := &openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					Message: openai.ChatCompletionMessage{
+						Content: "",
+					},
+					FinishReason: "content_filter",
+				},
+			},
+		}
+		_, err := extractContent(chat)
+		if err == nil {
+			t.Fatal("extractContent() com content_filter = nil, want erro")
+		}
+	})
+}
+
+func TestIsContextLengthError(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{name: "context length", msg: "context length exceeded", want: true},
+		{name: "maximum context", msg: "maximum context window is 4096 tokens", want: true},
+		{name: "token limit", msg: "token limit reached", want: true},
+		{name: "context_window", msg: "context_window_too_large", want: true},
+		{name: "context_length_exceeded", msg: "context_length_exceeded", want: true},
+		{name: "too many tokens", msg: "too many tokens for this model", want: true},
+		{name: "request too large", msg: "request too large for this model", want: true},
+		{name: "max_tokens", msg: "max_tokens exceeded", want: true},
+		{name: "caso normal", msg: "rate limit exceeded", want: false},
+		{name: "erro auth", msg: "invalid API key", want: false},
+		{name: "vazio", msg: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isContextLengthError(tt.msg)
+			if result != tt.want {
+				t.Errorf("isContextLengthError(%q) = %v, want %v", tt.msg, result, tt.want)
+			}
+		})
+	}
 }
 
 func TestClassifyAPIErrorSanitization(t *testing.T) {

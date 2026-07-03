@@ -1,4 +1,4 @@
-.PHONY: build test test-verbose test-race test-integration lint lint-ci clean
+.PHONY: build test test-verbose test-race test-integration lint lint-ci clean commit-push
 
 BINARY_NAME ?= tldr
 BUILD_DIR ?= build
@@ -38,3 +38,9 @@ clean:
 	@echo "Cleaning..."
 	@rm -rf $(BUILD_DIR)
 	@echo "Done."
+
+# Commit + Push: cria um commit com a mensagem e faz push para a branch atual
+# Uso: make commit-push m="mensagem do commit"
+commit-push:
+	@BRANCH=$$(git branch --show-current); \
+	git add -A && git commit -m "$(m)" && git push origin $$BRANCH

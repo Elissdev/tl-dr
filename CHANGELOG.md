@@ -1,6 +1,6 @@
 # Changelog
 
-## Working Tree — Breaking Changes (não publicado)
+## PR #14 — Conclusão das 11 Code Reviews (2026-07-03)
 
 ### 🔴 Breaking Changes na API Pública
 
@@ -36,19 +36,51 @@
 ### 🟢 Novas Funcionalidades
 
 - **Flag `--no-sanitize`**: desabilita a remoção de ANSI escape codes da saída.
+- **Flag `--timeout` / `-t`**: timeout customizável via CLI (sobrescreve `TLDR_TIMEOUT`).
+- **Flag `--version` / `-v`**: exibe versão do binário (injetada via ldflags).
 - **Validação de idioma**: formato do `--lang` é validado (ex: `pt-br`, `en`, `zh-CN`).
 - **Redação estendida de credenciais**: cobre DeepSeek, Anthropic, GitHub PAT, JWT,
-  e fallback genérico para strings de 40+ caracteres.
+  e fallback genérico para strings de 60+ caracteres.
 - **Erros preservam cadeia original**: `classifyAPIError` agora retorna `*redactedError`
   que preserva a cadeia de erros para `errors.Is`/`errors.As`.
+- **Sentinel errors**: `ErrTruncated` (conteúdo parcial + truncamento) e `ErrTimeout`
+  (detectável via `errors.Is`).
+- **Safety prefix anti-prompt injection**: prefixo imutável em pt e en inserido antes
+  de todo prompt.
+- **Feedback visual no stderr**: exibe idioma, modelo e progresso ("📝 Resumindo...").
+- **Expansão de `~` em caminhos de arquivo**: `tldr ~/documento.txt` funciona.
 
 ### 🔧 Melhorias Técnicas
 
 - TOCTOU eliminado em `ReadFromFile`: usa `os.Open` + `f.Stat()` em vez de `os.Stat` + `os.ReadFile`.
 - TOCTOU eliminado em `ReadFromStdin`: verificação de terminal movida para dentro da função.
-- Goroutine leak evitado em timeout: `os.Stdin.Close()` desbloqueia a leitura.
-- Teste de timeout de stdin adicionado.
-- `summarizer.New()` valida todos os campos obrigatórios.
+- Goroutine leak evitado em timeout: leitura em goroutine com `context.WithTimeout`.
+- `unsafe` removido de `secrets.go`: zerar buffer de string com `unsafe.Pointer` não é confiável.
+- `summarizer.New()` valida todos os campos obrigatórios (`APIKey`, `Model`, `BaseURL`).
+- `newRootCommand()`: comando raiz sem estado global/`init()` — testável isoladamente.
+- `localeConfig` + `supportedLocales`: adicionar idioma = adicionar entrada no mapa.
+- `apiKeyRedactors` como slice de regexes específicas (em vez de uma regex gigante).
+- `redactedError` preserva cadeia de erros original para `errors.Is`/`errors.As`.
+- Validação de URL agora exige `http://` ou `https://` no scheme.
+- `envOr()` renomeado de `getEnv()` para clareza.
+- CI: testes com race detector + gosec security scan.
+- Makefile: versão injetada via ldflags.
+
+### 🧪 Testes
+
+- `TestBuildPrompt` — verifica prefixo de segurança + sufixo correto
+- `TestBuildPromptSafetyPrefixAlwaysPresent` — todas as combinações de idioma
+- `TestSanitizeOutput` — CSI, OSC, DCS, SOS, PM, APC, newlines, tabs, CR
+- `TestSanitizeOutputEdgeCases` — ESC isolado, incompleto, múltiplo, unicode
+- `TestGetLocale` — pt-br, pt, en, fallback, não quebra existentes
+- `TestFirstNonEmpty` — vários cenários de precedência
+- `TestExecute` — langPattern, flags, env vars, sem API key, idioma inválido
+- `TestNew` (summarizer) — validação de campos obrigatórios, timeout zero
+- `TestSummarize` — `finish_reason=stop` vazio, erro 400
+- `TestClassifyAPIErrorSanitization` — sk-, sk-proj-, api_key=, token=, própria chave, timeout
+- `TestRedactCredentials` — chave configurada, vazia, string vazia
+- Stdin timeout com `ReadFromStdinWithTimeout`
+- `TestIsStdinRedirected` determinístico (pipe vs terminal)
 
 ---
 

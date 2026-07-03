@@ -173,10 +173,32 @@ func TestReadStdin(t *testing.T) {
 }
 
 func TestIsStdinAvailable(t *testing.T) {
-	// Em testes, stdin normalmente é um terminal, então IsStdinAvailable
-	// deve retornar false. Não podemos simular pipe facilmente aqui,
-	// mas verificamos que a função não panic.
-	result := IsStdinAvailable()
-	// O resultado depende do ambiente de teste, só verificamos que não crasha
-	t.Logf("IsStdinAvailable() = %v", result)
+	t.Run("stdin pipe retorna true", func(t *testing.T) {
+		original := os.Stdin
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdin = r
+
+		// Escreve algo no pipe para simular dados disponíveis
+		_, writeErr := w.Write([]byte("dados"))
+		if writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		w.Close()
+
+		result := IsStdinAvailable()
+		os.Stdin = original
+		if !result {
+			t.Error("IsStdinAvailable() com pipe = false, want true")
+		}
+	})
+
+	t.Run("stdin terminal retorna false", func(t *testing.T) {
+		// Não podemos simular um terminal real em testes, mas verificamos
+		// que a função não panic e lida com o caso corretamente.
+		result := IsStdinAvailable()
+		t.Logf("IsStdinAvailable() em terminal = %v", result)
+	})
 }

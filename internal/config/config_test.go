@@ -41,7 +41,10 @@ func TestLoad(t *testing.T) {
 		setEnv(t, "TLDR_DEFAULT_LANG", "en")
 		setEnv(t, "TLDR_TIMEOUT", "60")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.APIKey != "sk-test-key-1234567890" {
 			t.Errorf("APIKey = %q, want %q", cfg.APIKey, "sk-test-key-1234567890")
 		}
@@ -66,7 +69,10 @@ func TestLoad(t *testing.T) {
 		unsetEnv(t, "TLDR_TIMEOUT")
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.BaseURL != "https://api.apiario.dev/v1" {
 			t.Errorf("BaseURL padrão = %q, want %q", cfg.BaseURL, "https://api.apiario.dev/v1")
 		}
@@ -81,22 +87,31 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("config sem API key", func(t *testing.T) {
+	t.Run("config sem API key retorna erro", func(t *testing.T) {
 		unsetEnv(t, "TLDR_API_KEY")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err == nil {
+			t.Fatal("Load() sem API key = nil, want erro")
+		}
 		if cfg.APIKey != "" {
-			t.Errorf("APIKey = %q, want vazio", cfg.APIKey)
+			t.Errorf("cfg.APIKey = %q, want vazio", cfg.APIKey)
+		}
+		if cfg.BaseURL != "https://api.apiario.dev/v1" {
+			t.Errorf("cfg.BaseURL = %q, want default", cfg.BaseURL)
+		}
+		if cfg.DefaultModel != "deepseek/deepseek-v4-flash" {
+			t.Errorf("cfg.DefaultModel = %q, want default", cfg.DefaultModel)
 		}
 	})
 
-	t.Run("timeout inválido usa padrão", func(t *testing.T) {
+	t.Run("timeout inválido retorna erro", func(t *testing.T) {
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 		setEnv(t, "TLDR_TIMEOUT", "invalido")
 
-		cfg := Load()
-		if cfg.Timeout != 30*time.Second {
-			t.Errorf("Timeout com valor inválido = %v, want %v", cfg.Timeout, 30*time.Second)
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() com TLDR_TIMEOUT inválido = nil, want erro")
 		}
 	})
 
@@ -104,25 +119,22 @@ func TestLoad(t *testing.T) {
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 		setEnv(t, "TLDR_TIMEOUT", "0")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.Timeout != 30*time.Second {
 			t.Errorf("Timeout com valor zero = %v, want %v", cfg.Timeout, 30*time.Second)
 		}
 	})
-}
 
-func TestValidate(t *testing.T) {
-	t.Run("com chave", func(t *testing.T) {
-		cfg := Config{APIKey: "sk-valid"}
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("Validate() com chave válida = %v, want nil", err)
-		}
-	})
+	t.Run("URL base inválida retorna erro", func(t *testing.T) {
+		setEnv(t, "TLDR_API_KEY", "sk-test-key")
+		setEnv(t, "TLDR_BASE_URL", "://invalida")
 
-	t.Run("sem chave", func(t *testing.T) {
-		cfg := Config{APIKey: ""}
-		if err := cfg.Validate(); err == nil {
-			t.Error("Validate() sem chave = nil, want erro")
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() com TLDR_BASE_URL inválida = nil, want erro")
 		}
 	})
 }
@@ -130,13 +142,24 @@ func TestValidate(t *testing.T) {
 func TestClear(t *testing.T) {
 	setEnv(t, "TLDR_API_KEY", "sk-test-key-clear")
 
-	cfg := Load()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() erro inesperado: %v", err)
+	}
 	if cfg.APIKey == "" {
 		t.Fatal("Load() deveria ter carregado a chave")
 	}
 
+	// Verifica que Clear() zera a chave visível e que a struct pode ser
+	// usada novamente sem pânico (proteção contra double-clear).
 	cfg.Clear()
 	if cfg.APIKey != "" {
-		t.Error("Clear() deveria ter zerado APIKey")
+		t.Errorf("Clear() não zerou APIKey: %q", cfg.APIKey)
+	}
+
+	// Double-clear não deve causar pânico
+	cfg.Clear()
+	if cfg.APIKey != "" {
+		t.Errorf("Clear() após double-clear não zerou APIKey: %q", cfg.APIKey)
 	}
 }

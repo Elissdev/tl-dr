@@ -1,5 +1,48 @@
 # Changelog
 
+## Fase 2 — Configuração via variáveis de ambiente (2026-07-03)
+
+### 🔄 Mudanças na API Interna
+
+- **`config.Load()` agora retorna `(Config, error)`**: validação acontece no ponto de carga,
+  eliminando a necessidade do método `Validate()` separado
+- **Método `Validate()` removido**: a validação agora é feita durante o `Load()`
+
+### ✨ Novas Validações
+
+- **`TLDR_BASE_URL` é validada como URL**: se for inválida, `Load()` retorna erro
+- **`TLDR_TIMEOUT` inválido retorna erro**: valores não numéricos agora falham explicitamente
+  (antes eram silenciosamente ignorados)
+- **Erro mais descritivo ao falhar `secrets.LoadAPIKey()`**: mensagem genérica em vez de
+  culpar exclusivamente `TLDR_API_KEY`
+
+### 🔒 Segurança
+
+- **`ProtectedAPIKey.Clear()` agora é nil-safe**: chamar `Clear()` em ponteiro nil é seguro
+- **Documentação da sanitização**: regex de redação de chaves tem escopo explicado
+  (aplicada apenas em mensagens de erro)
+
+### 🧪 Testes
+
+- Teste "sem API key" agora verifica os campos do `Config` retornado (não só o erro)
+- Teste de URL base inválida adicionado
+- `TestIsStdinAvailable` agora simula pipe real (não apenas loga o resultado)
+- `TestClear` testa double-clear (não causa pânico)
+- Testes de `buildPrompt` incluem casos `pt-br` e `pt`
+
+### 📝 Documentação
+
+- Comentários em `NewExitError`/`WrapExitError` com exemplos de uso
+- Comentário de segurança sobre a ordem do `cfg.Clear()` em `root.go`
+- Prompt padrão agora adapta ao idioma: `pt-br`/`pt` usam template em português
+
+### 🔧 Manutenção
+
+- Função auxiliar `cfgZeroed()` removida (substituída por inline)
+- Dupla validação de timeout documentada em `summarizer.New()`
+
+---
+
 ## Fase 1 — MVP (2026-07-02)
 
 ### 🚀 Funcionalidades Implementadas

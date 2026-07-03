@@ -15,6 +15,8 @@ import (
 
 // apiKeyPattern detecta possíveis chaves de API em mensagens de erro para
 // fazer redação antes de exibir ao usuário.
+// ATENÇÃO: esta regex é aplicada APENAS em mensagens de erro (nunca no
+// conteúdo do usuário), então o risco de redigir conteúdo legítimo é baixo.
 // Cobre os formatos:
 //   - sk-... (OpenAI legado)
 //   - sk-proj-... (OpenAI novo formato)
@@ -37,6 +39,8 @@ type Summarizer struct {
 }
 
 // New cria um novo Summarizer com a configuração fornecida.
+// Nota: config.Load() já garante timeout > 0, mas mantemos o fallback
+// como segurança para chamadas diretas a esta função.
 func New(cfg Config) *Summarizer {
 	timeout := cfg.Timeout
 	if timeout <= 0 {

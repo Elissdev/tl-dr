@@ -31,11 +31,15 @@ func (e *ExitError) Unwrap() error {
 }
 
 // NewExitError cria um novo ExitError com o código e mensagem fornecidos.
+// Use esta função quando você tem uma mensagem estática (sem erro encapsulado).
+// Exemplo: return NewExitError(ExitArgumentError, "idioma é obrigatório")
 func NewExitError(code ExitCode, msg string) *ExitError {
 	return &ExitError{Code: code, Err: fmt.Errorf("%s", msg)}
 }
 
 // WrapExitError envolve um erro existente com um código de saída.
+// Use esta função quando você já tem um erro de outra camada (ex: I/O, API).
+// Exemplo: return WrapExitError(ExitGenericError, err)
 func WrapExitError(code ExitCode, err error) *ExitError {
 	return &ExitError{Code: code, Err: err}
 }

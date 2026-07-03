@@ -27,14 +27,12 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Carregar configuração
-		cfg := config.Load()
-
-		// 2. Validar configuração
-		if err := cfg.Validate(); err != nil {
+		cfg, err := config.Load()
+		if err != nil {
 			return WrapExitError(ExitArgumentError, err)
 		}
 
-		// 3. Resolver modelo (flag > env > hardcoded)
+		// 2. Resolver modelo (flag > env > hardcoded)
 		resolvedModel := cfg.DefaultModel
 		if model != "" {
 			resolvedModel = model

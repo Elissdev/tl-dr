@@ -41,7 +41,10 @@ func TestLoad(t *testing.T) {
 		setEnv(t, "TLDR_DEFAULT_LANG", "en")
 		setEnv(t, "TLDR_TIMEOUT", "60")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.APIKey != "sk-test-key-1234567890" {
 			t.Errorf("APIKey = %q, want %q", cfg.APIKey, "sk-test-key-1234567890")
 		}
@@ -66,7 +69,10 @@ func TestLoad(t *testing.T) {
 		unsetEnv(t, "TLDR_TIMEOUT")
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.BaseURL != "https://api.apiario.dev/v1" {
 			t.Errorf("BaseURL padrão = %q, want %q", cfg.BaseURL, "https://api.apiario.dev/v1")
 		}
@@ -81,12 +87,12 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
-	t.Run("config sem API key", func(t *testing.T) {
+	t.Run("config sem API key retorna erro", func(t *testing.T) {
 		unsetEnv(t, "TLDR_API_KEY")
 
-		cfg := Load()
-		if cfg.APIKey != "" {
-			t.Errorf("APIKey = %q, want vazio", cfg.APIKey)
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() sem API key = nil, want erro")
 		}
 	})
 
@@ -94,7 +100,10 @@ func TestLoad(t *testing.T) {
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 		setEnv(t, "TLDR_TIMEOUT", "invalido")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.Timeout != 30*time.Second {
 			t.Errorf("Timeout com valor inválido = %v, want %v", cfg.Timeout, 30*time.Second)
 		}
@@ -104,25 +113,12 @@ func TestLoad(t *testing.T) {
 		setEnv(t, "TLDR_API_KEY", "sk-test-key")
 		setEnv(t, "TLDR_TIMEOUT", "0")
 
-		cfg := Load()
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() erro inesperado: %v", err)
+		}
 		if cfg.Timeout != 30*time.Second {
 			t.Errorf("Timeout com valor zero = %v, want %v", cfg.Timeout, 30*time.Second)
-		}
-	})
-}
-
-func TestValidate(t *testing.T) {
-	t.Run("com chave", func(t *testing.T) {
-		cfg := Config{APIKey: "sk-valid"}
-		if err := cfg.Validate(); err != nil {
-			t.Errorf("Validate() com chave válida = %v, want nil", err)
-		}
-	})
-
-	t.Run("sem chave", func(t *testing.T) {
-		cfg := Config{APIKey: ""}
-		if err := cfg.Validate(); err == nil {
-			t.Error("Validate() sem chave = nil, want erro")
 		}
 	})
 }
@@ -130,7 +126,10 @@ func TestValidate(t *testing.T) {
 func TestClear(t *testing.T) {
 	setEnv(t, "TLDR_API_KEY", "sk-test-key-clear")
 
-	cfg := Load()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() erro inesperado: %v", err)
+	}
 	if cfg.APIKey == "" {
 		t.Fatal("Load() deveria ter carregado a chave")
 	}

@@ -21,7 +21,8 @@ type Config struct {
 }
 
 // Load lê as variáveis de ambiente e retorna um Config.
-func Load() Config {
+// Retorna erro se TLDR_API_KEY não estiver definida.
+func Load() (Config, error) {
 	cfg := Config{
 		BaseURL:      getEnv("TLDR_BASE_URL", "https://api.apiario.dev/v1"),
 		DefaultModel: getEnv("TLDR_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"),
@@ -36,14 +37,15 @@ func Load() Config {
 		}
 	}
 
-	// Tenta carregar a chave de forma protegida; se falhar, Validate() captura depois.
+	// Carrega a chave de API — obrigatória
 	key, err := secrets.LoadAPIKey()
-	if err == nil {
-		cfg.APIKey = key.Get()
-		cfg.protectedKey = key
+	if err != nil {
+		return cfg, fmt.Errorf("TLDR_API_KEY não definida — configure a variável de ambiente")
 	}
+	cfg.APIKey = key.Get()
+	cfg.protectedKey = key
 
-	return cfg
+	return cfg, nil
 }
 
 // Clear zera a chave de API da memória. Deve ser chamado assim que a chave
@@ -54,14 +56,6 @@ func (c *Config) Clear() {
 		c.protectedKey = nil
 	}
 	c.APIKey = ""
-}
-
-// Validate verifica se as configurações essenciais estão presentes.
-func (c Config) Validate() error {
-	if c.APIKey == "" {
-		return fmt.Errorf("TLDR_API_KEY não definida — configure a variável de ambiente")
-	}
-	return nil
 }
 
 func getEnv(key, fallback string) string {

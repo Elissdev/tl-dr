@@ -40,6 +40,15 @@ var version = "dev" // Set via ldflags: -X github.com/Elissdev/tl-dr/cmd.version
 // Cada chamada retorna um comando novo, evitando estado global e permitindo
 // testes isolados sem init().
 func newRootCommand(version string) *cobra.Command {
+	// Declara as flags antes da closure para ficarem em escopo
+	var (
+		lang         *string
+		modelFlag    *string
+		customPrompt *string
+		noSanitize   *bool
+		timeoutFlag  *int
+	)
+
 	cmd := &cobra.Command{
 		Use:   "tldr [flags] [<arquivo>]",
 		Short: "tl;dr — Resumidor de texto via CLI",
@@ -150,14 +159,14 @@ Exemplos de uso:
 		},
 	}
 
-	// Registra flags locais usando ponteiros em vez de variáveis globais.
+	// Registra flags usando os placeholders declarados acima.
 	// Cada chamada de newRootCommand cria flags independentes, permitindo
 	// testes isolados sem estado compartilhado.
-	lang := cmd.Flags().StringP("lang", "l", "", "Idioma do resumo (ex: pt-br, en, es)")
-	modelFlag := cmd.Flags().StringP("model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
-	customPrompt := cmd.Flags().StringP("prompt", "p", "", "Prompt customizado para o resumo")
-	noSanitize := cmd.Flags().BoolP("no-sanitize", "", false, "Desabilita sanitização de escape codes ANSI na saída (use se o terminal já processa cores/estilos)")
-	timeoutFlag := cmd.Flags().IntP("timeout", "t", 0, "Timeout da requisição em segundos (default: 30)")
+	lang = cmd.Flags().StringP("lang", "l", "", "Idioma do resumo (ex: pt-br, en, es)")
+	modelFlag = cmd.Flags().StringP("model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
+	customPrompt = cmd.Flags().StringP("prompt", "p", "", "Prompt customizado para o resumo")
+	noSanitize = cmd.Flags().BoolP("no-sanitize", "", false, "Desabilita sanitização de escape codes ANSI na saída (use se o terminal já processa cores/estilos)")
+	timeoutFlag = cmd.Flags().IntP("timeout", "t", 0, "Timeout da requisição em segundos (default: 30)")
 	// --lang é validado manualmente no RunE (pode vir via TLDR_DEFAULT_LANG)
 
 	// Suporte a --version

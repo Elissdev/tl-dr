@@ -99,8 +99,12 @@ func TestReadFromFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("erro inesperado: %v", err)
 		}
-		if !strings.HasPrefix(result, "\uFEFF") && !strings.HasPrefix(result, string(data)) {
-			t.Errorf("resultado inesperado: %q", result)
+		if result != string(data) {
+			t.Errorf("ReadFromFile = %q, want %q", result, string(data))
+		}
+		// Verifica que o BOM UTF-8 foi preservado
+		if !strings.HasPrefix(result, "\uFEFF") {
+			t.Errorf("BOM UTF-8 foi perdido: %q", result)
 		}
 	})
 }
@@ -140,13 +144,10 @@ func TestReadFromStdin(t *testing.T) {
 		os.Stdin = r
 		w.Close()
 
-		result, err := ReadFromStdin()
+		_, err = ReadFromStdin()
 		os.Stdin = original
-		if err != nil {
-			t.Fatalf("erro inesperado: %v", err)
-		}
-		if result != "" {
-			t.Errorf("ReadFromStdin = %q, want %q", result, "")
+		if err == nil {
+			t.Fatal("esperava erro para stdin vazio, mas retornou nil")
 		}
 	})
 
@@ -253,7 +254,9 @@ func TestReadInput(t *testing.T) {
 		}
 	})
 
-	t.Run("sem argumento e sem stdin retorna erro", func(t *testing.T) {
+	t.Run("sem argumento e stdin é terminal retorna erro", func(t *testing.T) {
+		// Em ambiente de teste, stdin normalmente é terminal (sem pipe),
+		// então ReadFromStdin() deve retornar erro.
 		_, err := ReadInput([]string{})
 		if err == nil {
 			t.Fatal("esperava erro, mas retornou nil")

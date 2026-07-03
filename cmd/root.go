@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/Elissdev/tl-dr/internal/config"
 	"github.com/Elissdev/tl-dr/internal/input"
 	"github.com/Elissdev/tl-dr/internal/summarizer"
 	"github.com/spf13/cobra"
 )
+
+// langPattern valida o formato do idioma (ex: pt-br, en, es, zh-CN).
+var langPattern = regexp.MustCompile(`^[a-z]{2}(-[a-zA-Z]{2,4})?$`)
 
 var (
 	lang             string
@@ -46,6 +50,10 @@ Documentação: https://github.com/Elissdev/tl-dr`,
 		if resolvedLang == "" {
 			return NewExitError(ExitArgumentError,
 				"idioma é obrigatório: use --lang ou defina TLDR_DEFAULT_LANG")
+		}
+		if !langPattern.MatchString(resolvedLang) {
+			return NewExitError(ExitArgumentError,
+				fmt.Sprintf("idioma inválido: %q — use formato como pt-br, en, es", resolvedLang))
 		}
 
 		// 4. Ler entrada
@@ -105,9 +113,15 @@ func init() {
 
 // buildPrompt constrói o prompt final para a API.
 // Quando lang é pt-br ou pt, usa um template em português para o prompt padrão.
+// Quando customPrompt é fornecido, o prefixo de idioma respeita o lang escolhido.
 func buildPrompt(lang, customPrompt string) string {
 	if customPrompt != "" {
-		return fmt.Sprintf("Responda em %s.\n\n%s", lang, customPrompt)
+		switch lang {
+		case "pt-br", "pt":
+			return fmt.Sprintf("Responda em %s.\n\n%s", lang, customPrompt)
+		default:
+			return fmt.Sprintf("Answer in %s.\n\n%s", lang, customPrompt)
+		}
 	}
 	switch lang {
 	case "pt-br", "pt":

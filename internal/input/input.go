@@ -38,9 +38,24 @@ func ReadFromFile(path string) (string, error) {
 	return string(data), nil
 }
 
-// ReadStdin lê o conteúdo da entrada padrão. Apenas UTF-8 é suportado.
+// isTerminal verifica se stdin é um terminal (sem pipe/redirecionamento).
+func isTerminal() bool {
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
+// ReadFromStdin lê o conteúdo da entrada padrão. Apenas UTF-8 é suportado.
 // Se a entrada exceder MaxInputSize, retorna ErrInputTooLarge.
+// Se stdin for um terminal (sem pipe/redirecionamento), retorna erro.
 func ReadFromStdin() (string, error) {
+	// Detecta se stdin é terminal — sem dados disponíveis
+	if isTerminal() {
+		return "", fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
+	}
+
 	// Lê MaxInputSize + 1 bytes para detectar se a entrada foi truncada
 	limit := MaxInputSize + 1
 	limitedReader := io.LimitReader(os.Stdin, limit)
@@ -54,7 +69,7 @@ func ReadFromStdin() (string, error) {
 	}
 
 	if len(data) == 0 {
-		return "", nil
+		return "", fmt.Errorf("nenhum texto recebido via stdin")
 	}
 
 	if !utf8.Valid(data) {
@@ -65,12 +80,10 @@ func ReadFromStdin() (string, error) {
 }
 
 // IsStdinAvailable verifica se há dados disponíveis no stdin (pipe/redirecionamento).
+// Mantida para compatibilidade externa, mas internamente ReadFromStdin e ReadInput
+// fazem esta verificação por conta própria (eliminando TOCTOU).
 func IsStdinAvailable() bool {
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (stat.Mode() & os.ModeCharDevice) == 0
+	return !isTerminal()
 }
 
 // ReadInput lê o texto de entrada de arquivo ou stdin, seguindo a ordem
@@ -79,9 +92,6 @@ func IsStdinAvailable() bool {
 func ReadInput(args []string) (string, error) {
 	if len(args) > 0 {
 		return ReadFromFile(args[0])
-	}
-	if !IsStdinAvailable() {
-		return "", fmt.Errorf("nenhum texto fornecido — passe um arquivo ou pipe via stdin")
 	}
 	return ReadFromStdin()
 }

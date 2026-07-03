@@ -178,8 +178,8 @@ func TestSummarize(t *testing.T) {
 
 	t.Run("contexto cancelado", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Não responde para simular requisição lenta
-			select {}
+			// Aguarda o cancelamento do contexto ao invés de bloquear para sempre
+			<-r.Context().Done()
 		}))
 		defer server.Close()
 

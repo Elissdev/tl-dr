@@ -30,16 +30,22 @@ func TestBuildPrompt(t *testing.T) {
 			want:         "Resuma o texto a seguir em pt. Seja conciso mas capture todos os pontos-chave.",
 		},
 		{
-			name:         "custom prompt with lang",
+			name:         "custom prompt with lang en",
 			lang:         "en",
-			customPrompt: "Resuma para um leigo no assunto",
-			want:         "Responda em en.\n\nResuma para um leigo no assunto",
+			customPrompt: "Explain like I'm 5",
+			want:         "Answer in en.\n\nExplain like I'm 5",
 		},
 		{
-			name:         "custom prompt includes original",
+			name:         "custom prompt with lang pt-br",
+			lang:         "pt-br",
+			customPrompt: "Resuma para um leigo no assunto",
+			want:         "Responda em pt-br.\n\nResuma para um leigo no assunto",
+		},
+		{
+			name:         "custom prompt with lang es",
 			lang:         "es",
 			customPrompt: "Haz un resumen",
-			want:         "Responda em es.\n\nHaz un resumen",
+			want:         "Answer in es.\n\nHaz un resumen",
 		},
 	}
 

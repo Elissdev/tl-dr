@@ -154,6 +154,10 @@ var ErrTimeout = errors.New("a requisição excedeu o tempo limite")
 // Preserva a cadeia de erros original via redactedError para permitir
 // errors.Is/errors.As sem expor credenciais na mensagem.
 func (s *Client) classifyAPIError(err error) error {
+	// Redige credenciais primeiro para evitar vazamento antes de qualquer
+	// classificação do erro.
+	redactedMsg := redactCredentials(err.Error(), s.apiKey)
+
 	// Detecta timeout antes de tentar interpretar como erro da API,
 	// pois timeouts podem manifestar-se como erros de rede antes mesmo
 	// de uma resposta HTTP ser recebida.
@@ -161,8 +165,8 @@ func (s *Client) classifyAPIError(err error) error {
 		strings.Contains(err.Error(), "timeout") ||
 		strings.Contains(err.Error(), "deadline") {
 		return &redactedError{
-			msg:   ErrTimeout.Error(),
-			cause: err,
+			msg:   fmt.Sprintf("%s: %s", ErrTimeout.Error(), redactedMsg),
+			cause: fmt.Errorf("%w: %w", ErrTimeout, err),
 		}
 	}
 
@@ -194,9 +198,8 @@ func (s *Client) classifyAPIError(err error) error {
 		}
 	}
 
-	msg := redactCredentials(err.Error(), s.apiKey)
 	return &redactedError{
-		msg:   fmt.Sprintf("erro na chamada da API: %s", msg),
+		msg:   fmt.Sprintf("erro na chamada da API: %s", redactedMsg),
 		cause: err,
 	}
 }

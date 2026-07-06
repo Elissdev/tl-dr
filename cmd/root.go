@@ -302,9 +302,19 @@ func sanitizeOutput(s string) string {
 					}
 					i--
 				default:
-					// Outras sequências ESC não reconhecidas: ignora o byte
-					// para evitar que comandos de terminal não tratados
-					// (ex: DECSC \x1b7, DECRQC \x1b6) vazem para a saída.
+					// Outras sequências ESC não reconhecidas:
+					// Se for byte não-ASCII (>=0x80), pula a sequência UTF-8 completa.
+					// Se for byte ASCII (<0x80), deixa o loop principal processá-lo.
+					if s[i] >= 0x80 {
+						// Pula bytes de continuação UTF-8 (0x80-0xBF)
+						i++
+						for i < len(s) && s[i] >= 0x80 && s[i] < 0xC0 {
+							i++
+						}
+						i-- // ajusta para o incremento do for
+					} else {
+						i-- // deixa o loop principal re-processar este byte
+					}
 				}
 			}
 		} else if s[i] < 0x20 && s[i] != '\t' && s[i] != '\n' && s[i] != '\r' {

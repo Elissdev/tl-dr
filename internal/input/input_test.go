@@ -1,20 +1,12 @@
 package input
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
-
-// slowReader atrasa a leitura para simular um pipe lento.
-type slowReader struct {
-	r       io.Reader
-	delay   time.Duration
-	read    bool
-}
 
 func TestReadFromFile(t *testing.T) {
 	t.Run("arquivo normal", func(t *testing.T) {
@@ -118,14 +110,6 @@ func TestReadFromFile(t *testing.T) {
 	})
 }
 
-func (s *slowReader) Read(p []byte) (int, error) {
-	// Apenas atrasa na primeira chamada para simular pipe travado
-	if !s.read {
-		s.read = true
-		time.Sleep(s.delay)
-	}
-	return s.r.Read(p)
-}
 
 func TestReadFromStdin(t *testing.T) {
 	t.Run("stdin com dados", func(t *testing.T) {
@@ -203,7 +187,7 @@ func TestReadFromStdin(t *testing.T) {
 		// Escreve no pipe após um delay maior que o timeout
 		go func() {
 			time.Sleep(200 * time.Millisecond)
-			w.Write([]byte("dados"))
+			_, _ = w.Write([]byte("dados"))
 			w.Close()
 		}()
 

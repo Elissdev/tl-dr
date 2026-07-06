@@ -32,15 +32,19 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		BaseURL:      getEnv("TLDR_BASE_URL", "https://api.apiario.dev/v1"),
-		DefaultModel: getEnv("TLDR_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"),
+		BaseURL:      envOr("TLDR_BASE_URL", "https://api.apiario.dev/v1"),
+		DefaultModel: envOr("TLDR_DEFAULT_MODEL", "deepseek/deepseek-v4-flash"),
 		DefaultLang:  os.Getenv("TLDR_DEFAULT_LANG"),
 		Timeout:      30 * time.Second,
 	}
 
-	// Valida a URL base
-	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
+	// Valida a URL base (deve ter scheme http ou https)
+	u, err := url.ParseRequestURI(cfg.BaseURL)
+	if err != nil {
 		return cfg, fmt.Errorf("TLDR_BASE_URL inválida: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return cfg, fmt.Errorf("TLDR_BASE_URL deve começar com http:// ou https://, got %q", cfg.BaseURL)
 	}
 
 	// Timeout configurável via TLDR_TIMEOUT (em segundos)
@@ -75,7 +79,7 @@ func (c *Config) Clear() {
 	c.APIKey = ""
 }
 
-func getEnv(key, fallback string) string {
+func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}

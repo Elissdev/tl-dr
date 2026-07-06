@@ -26,7 +26,8 @@ jobs:
 
       - name: Security scan (gosec)
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          # v2.20.0 é a última versão compatível com Go 1.22
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.20.0
           gosec -exclude-dir=internal/integration ./...
 
   lint:

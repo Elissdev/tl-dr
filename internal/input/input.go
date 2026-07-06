@@ -34,7 +34,7 @@ func ReadFromFile(path string) (string, error) {
 		path = filepath.Join(home, path[1:])
 	}
 
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return "", fmt.Errorf("não foi possível abrir %s: %w", path, err)
 	}

@@ -2,15 +2,14 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
 func TestExitError(t *testing.T) {
 	t.Run("NewExitError", func(t *testing.T) {
-		err := NewExitError(ExitAPIError, "erro de API")
-		if err.Code != ExitAPIError {
-			t.Errorf("Code = %d, want %d", err.Code, ExitAPIError)
+		err := NewExitError(ExitAPI, "erro de API")
+		if err.Code != ExitAPI {
+			t.Errorf("Code = %d, want %d", err.Code, ExitAPI)
 		}
 		if err.Error() != "erro de API" {
 			t.Errorf("Error() = %q, want %q", err.Error(), "erro de API")
@@ -18,10 +17,10 @@ func TestExitError(t *testing.T) {
 	})
 
 	t.Run("WrapExitError", func(t *testing.T) {
-		original := fmt.Errorf("erro original: %s", "detalhe")
-		err := WrapExitError(ExitArgumentError, original)
-		if err.Code != ExitArgumentError {
-			t.Errorf("Code = %d, want %d", err.Code, ExitArgumentError)
+		original := errors.New("erro original: detalhe")
+		err := WrapExitError(ExitArgs, original)
+		if err.Code != ExitArgs {
+			t.Errorf("Code = %d, want %d", err.Code, ExitArgs)
 		}
 		if !errors.Is(err, original) {
 			t.Error("WrapExitError deveria preservar a cadeia de erros")
@@ -29,36 +28,36 @@ func TestExitError(t *testing.T) {
 	})
 
 	t.Run("IsAPIError", func(t *testing.T) {
-		err := NewExitError(ExitAPIError, "erro de API")
+		err := NewExitError(ExitAPI, "erro de API")
 		if !IsAPIError(err) {
-			t.Error("IsAPIError(ExitAPIError) = false, want true")
+			t.Error("IsAPIError(ExitAPI) = false, want true")
 		}
 
-		genericErr := NewExitError(ExitGenericError, "erro genérico")
+		genericErr := NewExitError(ExitInternal, "erro genérico")
 		if IsAPIError(genericErr) {
-			t.Error("IsAPIError(ExitGenericError) = true, want false")
+			t.Error("IsAPIError(ExitInternal) = true, want false")
 		}
 
-		if IsAPIError(fmt.Errorf("erro comum")) {
+		if IsAPIError(errors.New("erro comum")) {
 			t.Error("IsAPIError(erro comum) = true, want false")
 		}
 	})
 
 	t.Run("IsArgumentError", func(t *testing.T) {
-		err := NewExitError(ExitArgumentError, "erro de argumento")
+		err := NewExitError(ExitArgs, "erro de argumento")
 		if !IsArgumentError(err) {
-			t.Error("IsArgumentError(ExitArgumentError) = false, want true")
+			t.Error("IsArgumentError(ExitArgs) = false, want true")
 		}
 
-		apiErr := NewExitError(ExitAPIError, "erro de API")
+		apiErr := NewExitError(ExitAPI, "erro de API")
 		if IsArgumentError(apiErr) {
-			t.Error("IsArgumentError(ExitAPIError) = true, want false")
+			t.Error("IsArgumentError(ExitAPI) = true, want false")
 		}
 	})
 
 	t.Run("Unwrap", func(t *testing.T) {
-		original := fmt.Errorf("original error")
-		err := WrapExitError(ExitGenericError, original)
+		original := errors.New("original error")
+		err := WrapExitError(ExitInternal, original)
 		unwrapped := errors.Unwrap(err)
 		if unwrapped != original {
 			t.Errorf("Unwrap() = %v, want %v", unwrapped, original)
@@ -67,16 +66,19 @@ func TestExitError(t *testing.T) {
 }
 
 func TestExitCodes(t *testing.T) {
-	if ExitSuccess != 0 {
-		t.Errorf("ExitSuccess = %d, want 0", ExitSuccess)
+	if ExitOK != 0 {
+		t.Errorf("ExitOK = %d, want 0", ExitOK)
 	}
-	if ExitGenericError != 1 {
-		t.Errorf("ExitGenericError = %d, want 1", ExitGenericError)
+	if ExitInternal != 1 {
+		t.Errorf("ExitInternal = %d, want 1", ExitInternal)
 	}
-	if ExitAPIError != 2 {
-		t.Errorf("ExitAPIError = %d, want 2", ExitAPIError)
+	if ExitAPI != 2 {
+		t.Errorf("ExitAPI = %d, want 2", ExitAPI)
 	}
-	if ExitArgumentError != 3 {
-		t.Errorf("ExitArgumentError = %d, want 3", ExitArgumentError)
+	if ExitArgs != 3 {
+		t.Errorf("ExitArgs = %d, want 3", ExitArgs)
+	}
+	if ExitTimeout != 4 {
+		t.Errorf("ExitTimeout = %d, want 4", ExitTimeout)
 	}
 }

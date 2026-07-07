@@ -11,17 +11,26 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// envPermsWarn é o prefixo para o aviso de permissões do .env.
+// envPermsWarn é o prefixo para o aviso de permissões de arquivos.
 // Usar stderr evita misturar com a saída do resumo no stdout.
 // Mantido em inglês por ser um aviso de segurança universal.
 const envPermsWarn = "⚠️  WARNING: "
 
-// checkEnvPermissions verifica as permissões do arquivo .env e emite
-// um aviso no stderr se estiver legível para outros usuários.
-// Recomendação: chmod 600 .env
-func checkEnvPermissions() {
-	const filename = ".env"
-	info, err := os.Stat(filename)
+// checkFilePermissions verifica as permissões do arquivo no caminho
+// informado e emite um aviso no stderr se estiver legível para outros
+// usuários (group/others).
+//
+// Recomendação: chmod 600 <arquivo>
+//
+// ATENÇÃO: Esta verificação é BEST-EFFORT. Entre o stat() e o uso do
+// arquivo, um atacante com acesso ao sistema de arquivos pode alterar
+// as permissões (TOCTOU). Esta função serve como alerta preventivo,
+// não como garantia de segurança. A proteção real vem de:
+//   - Configuração correta de permissões no momento da criação do arquivo
+//   - Uso de variáveis de ambiente em vez de arquivos, quando possível
+//   - Sistemas de secrets gerenciados (ex: HashiCorp Vault, Docker secrets)
+func checkFilePermissions(path string) {
+	info, err := os.Stat(path)
 	if err != nil {
 		return // arquivo não existe ou não pode ser lido — sem warning
 	}
@@ -48,8 +57,8 @@ func checkEnvPermissions() {
 	}
 
 	if len(warnings) > 0 {
-		msg := fmt.Sprintf("%s.env tem permissões %04o — %s. Recomendado: chmod 600 .env\n",
-			envPermsWarn, perm, warnings[0])
+		msg := fmt.Sprintf("%s%s tem permissões %04o — %s. Recomendado: chmod 600\n",
+			envPermsWarn, path, perm, warnings[0])
 		_, _ = os.Stderr.WriteString(msg)
 	}
 }
@@ -74,7 +83,7 @@ func Load() (Config, error) {
 		return Config{APIKey: ""}, fmt.Errorf("erro ao carregar .env: %w", err)
 	} else if err == nil {
 		// .env foi carregado com sucesso — verifica permissões do arquivo
-		checkEnvPermissions()
+		checkFilePermissions(".env")
 	}
 
 	cfg := Config{
@@ -111,6 +120,12 @@ func Load() (Config, error) {
 	}
 	cfg.APIKey = key.Get()
 	cfg.protectedKey = key
+
+	// Verifica permissões do arquivo de chave (TLDR_API_KEY_FILE)
+	// após o Load para evitar TOCTOU entre stat e leitura.
+	if path := os.Getenv("TLDR_API_KEY_FILE"); path != "" {
+		checkFilePermissions(path)
+	}
 
 	return cfg, nil
 }

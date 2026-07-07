@@ -270,6 +270,7 @@ var injectionKeywords = []string{
 	"leak", "output", "dump", "expose", "forget",
 	"disregard", "override", "skip", "you are",
 	"you must", "you will", "im_start", "im_end",
+	"system", "user", "assistant",
 }
 
 // injectionPatterns são padrões de prompt injection conhecidos que devem
@@ -518,6 +519,12 @@ func sanitizeOutput(s string) string {
 			// Continuation byte (0x80-0xBF) que não foi capturado
 			// pelo bloco C1 acima (faixa 0xA0-0xBF)
 			utf8Remaining--
+		} else if c >= 0x80 && c <= 0xBF {
+			// Lone continuation byte sem lead byte correspondente.
+			// Embora a entrada seja validada como UTF-8 upstream, descartamos
+			// por segurança para evitar vazamento de bytes C1 malformados
+			// na saída.
+			continue
 		}
 
 		result.WriteByte(c)

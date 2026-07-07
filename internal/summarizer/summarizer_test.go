@@ -44,8 +44,8 @@ func TestNew(t *testing.T) {
 		if s.model != "test-model" {
 			t.Errorf("model = %q, want %q", s.model, "test-model")
 		}
-		if s.apiKey != "sk-test" {
-			t.Errorf("apiKey = %q, want %q", s.apiKey, "sk-test")
+		if string(s.apiKey) != "sk-test" {
+			t.Errorf("apiKey = %q, want %q", string(s.apiKey), "sk-test")
 		}
 	})
 
@@ -446,7 +446,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 func TestRedactCredentials(t *testing.T) {
 	t.Run("redige chave configurada", func(t *testing.T) {
-		result := redactCredentials("my-api-key-12345 is secret", "my-api-key-12345")
+		result := redactCredentials("my-api-key-12345 is secret", []byte("my-api-key-12345"))
 		if strings.Contains(result, "my-api-key-12345") {
 			t.Errorf("chave não redigida: %q", result)
 		}
@@ -456,15 +456,22 @@ func TestRedactCredentials(t *testing.T) {
 	})
 
 	t.Run("apiKey vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("some error message", "")
+		result := redactCredentials("some error message", nil)
 		if result != "some error message" {
 			t.Errorf("resultado inesperado: %q", result)
 		}
 	})
 
 	t.Run("string vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("", "sk-test-key")
+		result := redactCredentials("", []byte("sk-test-key"))
 		if result != "" {
+			t.Errorf("resultado inesperado: %q", result)
+		}
+	})
+
+	t.Run("slice vazio não quebra", func(t *testing.T) {
+		result := redactCredentials("some error message", []byte{})
+		if result != "some error message" {
 			t.Errorf("resultado inesperado: %q", result)
 		}
 	})

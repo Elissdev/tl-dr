@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -162,4 +163,104 @@ func TestClear(t *testing.T) {
 	if cfg.APIKey != "" {
 		t.Errorf("Clear() após double-clear não zerou APIKey: %q", cfg.APIKey)
 	}
+}
+
+func TestCheckEnvPermissions(t *testing.T) {
+	t.Run("sem .env não emite warning", func(t *testing.T) {
+		// Remove .env temporariamente se existir
+		_, err := os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			os.Rename(".env", ".env.bak")
+			defer os.Rename(".env.bak", ".env")
+		}
+
+		// Captura stderr
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if stderr != "" {
+			t.Errorf("sem .env não deveria emitir warning, got: %s", stderr)
+		}
+	})
+
+	t.Run(".env com permissão 0600 não emite warning", func(t *testing.T) {
+		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o600)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+		defer os.Remove(".env_test_perms")
+
+		// Renomeia .env temporário
+		_, err = os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			os.Rename(".env", ".env.bak")
+			defer os.Rename(".env.bak", ".env")
+		}
+		os.Rename(".env_test_perms", ".env")
+		defer os.Rename(".env", ".env_test_perms")
+
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if stderr != "" {
+			t.Errorf("0600 não deveria emitir warning, got: %s", stderr)
+		}
+	})
+
+	t.Run(".env com permissão 0644 emite warning", func(t *testing.T) {
+		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o644)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+		defer os.Remove(".env_test_perms")
+
+		_, err = os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			os.Rename(".env", ".env.bak")
+			defer os.Rename(".env.bak", ".env")
+		}
+		os.Rename(".env_test_perms", ".env")
+		defer os.Rename(".env", ".env_test_perms")
+
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if !strings.Contains(stderr, "AVISO") {
+			t.Errorf("0644 deveria emitir warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "600") {
+			t.Errorf("warning deveria recomendar chmod 600, got: %q", stderr)
+		}
+	})
+}
+
+// captureStderr captura a saída de os.Stderr durante a execução de f.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+
+	// Preserva o stderr original
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("erro ao criar pipe: %v", err)
+	}
+	os.Stderr = w
+
+	// Canal para receber o resultado
+	ch := make(chan string)
+	go func() {
+		buf := make([]byte, 1024)
+		n, _ := r.Read(buf)
+		ch <- string(buf[:n])
+	}()
+
+	f()
+
+	w.Close()
+	os.Stderr = orig
+
+	return <-ch
 }

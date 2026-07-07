@@ -14,6 +14,8 @@ import (
 	"github.com/openai/openai-go/shared"
 )
 
+
+
 // ErrTruncated é retornado quando o modelo atinge o limite de tokens e o resumo
 // ficou incompleto. O conteúdo parcial ainda está disponível no retorno da função.
 var ErrTruncated = errors.New("resumo truncado: o modelo atingiu o limite de tokens")
@@ -55,11 +57,14 @@ type Config struct {
 type Client struct {
 	client *openai.Client
 	model  string
-	apiKey string // armazenada para redação em mensagens de erro
+	apiKey []byte // armazenada como []byte para permitir limpeza na memória
 }
 
 // New cria um novo Client com a configuração fornecida.
 // Retorna erro se campos obrigatórios estiverem ausentes ou inválidos.
+// ATENÇÃO: A string cfg.APIKey é copiada internamente como []byte.
+// O caller deve zerar a string original via secrets.ZeroString (ou cfg.Clear())
+// após criar o Client.
 func New(cfg Config) (*Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("API key é obrigatória")
@@ -82,11 +87,25 @@ func New(cfg Config) (*Client, error) {
 		option.WithHTTPClient(&http.Client{Timeout: timeout}),
 		option.WithMaxRetries(0), // sem retry automático — tratamos erros no classifyAPIError
 	)
+	// Faz uma cópia em []byte para permitir zerar a memória posteriormente
+	apiKeyBytes := make([]byte, len(cfg.APIKey))
+	copy(apiKeyBytes, cfg.APIKey)
+
 	return &Client{
 		client: &client,
 		model:  cfg.Model,
-		apiKey: cfg.APIKey,
+		apiKey: apiKeyBytes,
 	}, nil
+}
+
+// Clear zera a chave de API da memória do Client.
+// Deve ser chamado assim que o Client não for mais necessário.
+// Após Clear, o Client não deve mais ser usado para chamadas de API.
+func (s *Client) Clear() {
+	for i := range s.apiKey {
+		s.apiKey[i] = 0
+	}
+	s.apiKey = nil
 }
 
 // Summarize envia um prompt e texto para a API e retorna o resumo.
@@ -207,9 +226,11 @@ func (s *Client) classifyAPIError(err error) error {
 // redactCredentials substitui quaisquer padrões de credenciais
 // encontrados em s por "***REDACTED***".
 // Também redige a chave de API fornecida (qualquer formato).
-func redactCredentials(s, apiKey string) string {
-	if apiKey != "" {
-		s = strings.ReplaceAll(s, apiKey, "***REDACTED***")
+// O parâmetro apiKey é []byte para permitir que o caller gerencie
+// o ciclo de vida da memória da chave.
+func redactCredentials(s string, apiKey []byte) string {
+	if len(apiKey) > 0 {
+		s = strings.ReplaceAll(s, string(apiKey), "***REDACTED***")
 	}
 	for _, re := range apiKeyRedactors {
 		s = re.ReplaceAllString(s, "***REDACTED***")

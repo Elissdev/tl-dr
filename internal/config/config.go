@@ -11,6 +11,47 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// envPermsWarn é o prefixo para o aviso de permissões do .env.
+// Usar stderr evita misturar com a saída do resumo no stdout.
+const envPermsWarn = "⚠️  AVISO: "
+
+// checkEnvPermissions verifica as permissões do arquivo .env e emite
+// um aviso no stderr se estiver legível para outros usuários.
+// Recomendação: chmod 600 .env
+func checkEnvPermissions() {
+	const filename = ".env"
+	info, err := os.Stat(filename)
+	if err != nil {
+		return // arquivo não existe ou não pode ser lido — sem warning
+	}
+	if info.IsDir() {
+		return
+	}
+
+	// ModePerm = bits de permissão (Unix: 0x1FF = 0777)
+	perm := info.Mode().Perm()
+
+	// Verifica se o arquivo é legível por "group" (0o040) ou "others" (0o004)
+	// A permissão segura recomendada é 0o600 (apenas owner)
+	const (
+		groupRead  = 0o040
+		othersRead = 0o004
+	)
+
+	var warnings []string
+	if perm&othersRead != 0 {
+		warnings = append(warnings, "legível para outros usuários")
+	} else if perm&groupRead != 0 {
+		warnings = append(warnings, "legível para o grupo")
+	}
+
+	if len(warnings) > 0 {
+		msg := fmt.Sprintf("%s.env tem permissões %04o — %s. Recomendado: chmod 600 .env\n",
+			envPermsWarn, perm, warnings[0])
+		os.Stderr.WriteString(msg)
+	}
+}
+
 // Config armazena as configurações lidas de variáveis de ambiente.
 type Config struct {
 	APIKey       string
@@ -29,6 +70,9 @@ func Load() (Config, error) {
 	// Tenta carregar .env; se houver erro diferente de "arquivo não encontrado", reporta
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		return Config{APIKey: ""}, fmt.Errorf("erro ao carregar .env: %w", err)
+	} else if err == nil {
+		// .env foi carregado com sucesso — verifica permissões do arquivo
+		checkEnvPermissions()
 	}
 
 	cfg := Config{
@@ -71,12 +115,30 @@ func Load() (Config, error) {
 
 // Clear zera a chave de API da memória. Deve ser chamado assim que a chave
 // não for mais necessária (após criar o cliente da API).
+// Após chamar Clear, a struct não deve mais ser usada.
+//
+// NOTA: A string c.APIKey é uma cópia do []byte interno do ProtectedAPIKey,
+// e o seu backing array NÃO pode ser zerado de forma portável em Go.
+// No entanto, ao substituir a string por "" e chamar o GC, o backing array
+// original fica elegível para coleta. A proteção principal vem de:
+//  1. ProtectedAPIKey.Clear() — zera o []byte original
+//  2. s.Clear() no summarizer.Client — zera a cópia interna em []byte
 func (c *Config) Clear() {
 	if c.protectedKey != nil {
 		c.protectedKey.Clear()
 		c.protectedKey = nil
 	}
 	c.APIKey = ""
+}
+
+// APIKeyBytes retorna a chave de API como []byte para uso em contextos
+// onde o caller pode gerenciar o ciclo de vida da memória.
+// Retorna nil se o ProtectedAPIKey não estiver mais disponível.
+func (c *Config) APIKeyBytes() []byte {
+	if c.protectedKey == nil {
+		return nil
+	}
+	return c.protectedKey.Bytes()
 }
 
 func envOr(key, fallback string) string {

@@ -545,6 +545,108 @@ func TestFirstNonEmpty(t *testing.T) {
 	}
 }
 
+
+func TestRootCommandStruct(t *testing.T) {
+	t.Run("RootCommand criado via init()", func(t *testing.T) {
+		// O init() deve ter criado rootCmd com um comando válido
+		if rootCmd == nil {
+			t.Fatal("rootCmd é nil após init()")
+		}
+		if rootCmd.cmd == nil {
+			t.Fatal("rootCmd.cmd é nil após init()")
+		}
+		if rootCmd.cmd.Use != "tldr [flags] [<arquivo>]" {
+			t.Errorf("Use = %q, want 'tldr [flags] [<arquivo>]'", rootCmd.cmd.Use)
+		}
+	})
+
+	t.Run("RootCommand.Command() retorna o comando", func(t *testing.T) {
+		if rootCmd.Command() != rootCmd.cmd {
+			t.Error("Command() deve retornar o mesmo comando interno")
+		}
+	})
+
+	t.Run("RootCommand.Execute() delega para cmd.Execute()", func(t *testing.T) {
+		// Verifica que não há panic ao chamar Execute sem args
+		// (deve retornar erro de argumento, não panic)
+		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
+		os.Unsetenv("TLDR_API_KEY")
+
+		err := rootCmd.Execute()
+
+		if keyExisted {
+			os.Setenv("TLDR_API_KEY", prevKey)
+		} else {
+			os.Unsetenv("TLDR_API_KEY")
+		}
+
+		if err == nil {
+			t.Fatal("Execute() sem chave = nil, want erro")
+		}
+	})
+
+	t.Run("--help funciona no comando raiz", func(t *testing.T) {
+		cmd := newRootCommand("test")
+		cmd.SetArgs([]string{"--help"})
+		err := cmd.Execute()
+		// Cobra retorna flag de ajuda como erro (SilenceUsage: true)
+		// Help flag: cobra registra flag de ajuda automaticamente
+		help := cmd.Flags().Lookup("help")
+		if help == nil {
+			t.Error("flag --help não registrada automaticamente pelo Cobra")
+		}
+		_ = err // Cobra retorna flag pflag.ErrHelp para --help
+	})
+}
+
+func TestInitRootCommand(t *testing.T) {
+	t.Run("Execute() usa o comando global do init()", func(t *testing.T) {
+		// Verifica que Execute() não dá panic e usa o comando global
+		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
+		os.Unsetenv("TLDR_API_KEY")
+
+		err := Execute()
+
+		if keyExisted {
+			os.Setenv("TLDR_API_KEY", prevKey)
+		} else {
+			os.Unsetenv("TLDR_API_KEY")
+		}
+
+		if err == nil {
+			t.Fatal("Execute() sem chave = nil, want erro")
+		}
+	})
+
+	t.Run("init() registra flags --lang, --model, --prompt", func(t *testing.T) {
+		cmd := newRootCommand("test")
+
+		langFlag := cmd.Flags().Lookup("lang")
+		if langFlag == nil {
+			t.Fatal("flag --lang não registrada")
+		}
+		if langFlag.Shorthand != "l" {
+			t.Errorf("lang shorthhand = %q, want 'l'", langFlag.Shorthand)
+		}
+
+		modelFlag := cmd.Flags().Lookup("model")
+		if modelFlag == nil {
+			t.Fatal("flag --model não registrada")
+		}
+		if modelFlag.Shorthand != "m" {
+			t.Errorf("model shorthand = %q, want 'm'", modelFlag.Shorthand)
+		}
+
+		promptFlag := cmd.Flags().Lookup("prompt")
+		if promptFlag == nil {
+			t.Fatal("flag --prompt não registrada")
+		}
+		if promptFlag.Shorthand != "p" {
+			t.Errorf("prompt shorthand = %q, want 'p'", promptFlag.Shorthand)
+		}
+	})
+}
+
 func TestExecute(t *testing.T) {
 	t.Run("langPattern aceita formatos válidos", func(t *testing.T) {
 		validLangs := []string{

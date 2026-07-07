@@ -34,6 +34,34 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// RootCommand representa o comando raiz da CLI tl;dr.
+// Encapsula o comando Cobra e fornece acesso às flags configuradas.
+type RootCommand struct {
+	cmd          *cobra.Command
+	Lang         string
+	ModelFlag    string
+	CustomPrompt string
+	NoSanitize   bool
+	TimeoutFlag  int
+}
+
+// Command retorna o comando Cobra interno.
+func (r *RootCommand) Command() *cobra.Command {
+	return r.cmd
+}
+
+// Execute executa o comando raiz.
+func (r *RootCommand) Execute() error {
+	return r.cmd.Execute()
+}
+
+var rootCmd *RootCommand
+
+func init() {
+	rc := newRootCommand(version)
+	rootCmd = &RootCommand{cmd: rc}
+}
+
 var version = "dev" // Set via ldflags: -X github.com/Elissdev/tl-dr/cmd.version=x.y.z
 
 // newRootCommand constrói e retorna o comando raiz com todas as flags registradas.
@@ -192,10 +220,11 @@ Exemplos de uso:
 	return cmd
 }
 
-// Execute executa o comando raiz. Retorna o erro, se houver, para que o
-// caller (main) possa fazer cleanup adequado antes de os.Exit.
+// Execute executa o comando raiz configurado via init().
+// Retorna o erro, se houver, para que o caller (main) possa fazer
+// cleanup adequado antes de os.Exit.
 func Execute() error {
-	return newRootCommand(version).Execute()
+	return rootCmd.cmd.Execute()
 }
 
 // localeConfig agrupa os templates de prompt para um determinado idioma.

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -162,4 +164,158 @@ func TestClear(t *testing.T) {
 	if cfg.APIKey != "" {
 		t.Errorf("Clear() após double-clear não zerou APIKey: %q", cfg.APIKey)
 	}
+}
+
+func TestAPIKeyBytes(t *testing.T) {
+	setEnv(t, "TLDR_API_KEY", "sk-test-key-bytes")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() erro inesperado: %v", err)
+	}
+
+	t.Run("APIKeyBytes retorna slice com a chave", func(t *testing.T) {
+		b := cfg.APIKeyBytes()
+		if b == nil {
+			t.Fatal("APIKeyBytes() = nil, want non-nil")
+		}
+		if string(b) != "sk-test-key-bytes" {
+			t.Errorf("APIKeyBytes() = %q, want %q", string(b), "sk-test-key-bytes")
+		}
+	})
+
+	t.Run("APIKeyBytes após Clear retorna nil", func(t *testing.T) {
+		cfg.Clear()
+		b := cfg.APIKeyBytes()
+		if b != nil {
+			t.Errorf("APIKeyBytes() após Clear = %q, want nil", string(b))
+		}
+	})
+}
+
+func TestCheckEnvPermissions(t *testing.T) {
+	t.Run("sem .env não emite warning", func(t *testing.T) {
+		// Remove .env temporariamente se existir
+		_, err := os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
+		}
+
+		// Captura stderr
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if stderr != "" {
+			t.Errorf("sem .env não deveria emitir warning, got: %s", stderr)
+		}
+	})
+
+	t.Run(".env com permissão 0600 não emite warning", func(t *testing.T) {
+		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o600)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+		defer os.Remove(".env_test_perms")
+
+		// Renomeia .env temporário
+		_, err = os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
+		}
+		if err := os.Rename(".env_test_perms", ".env"); err != nil {
+			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
+		}
+		defer func() {
+			if err := os.Rename(".env", ".env_test_perms"); err != nil {
+				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
+			}
+		}()
+
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if stderr != "" {
+			t.Errorf("0600 não deveria emitir warning, got: %s", stderr)
+		}
+	})
+
+	t.Run(".env com permissão 0644 emite warning", func(t *testing.T) {
+		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o644)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+		defer os.Remove(".env_test_perms")
+
+		_, err = os.ReadFile(".env")
+		hadEnv := err == nil
+		if hadEnv {
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
+		}
+		if err := os.Rename(".env_test_perms", ".env"); err != nil {
+			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
+		}
+		defer func() {
+			if err := os.Rename(".env", ".env_test_perms"); err != nil {
+				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
+			}
+		}()
+
+		stderr := captureStderr(t, func() {
+			checkEnvPermissions()
+		})
+		if !strings.Contains(stderr, "WARNING") {
+			t.Errorf("0644 deveria emitir warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "600") {
+			t.Errorf("warning deveria recomendar chmod 600, got: %q", stderr)
+		}
+	})
+}
+
+// captureStderr captura a saída de os.Stderr durante a execução de f.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("erro ao criar pipe: %v", err)
+	}
+	os.Stderr = w
+
+	ch := make(chan string)
+	go func() {
+		data, _ := io.ReadAll(r)
+		ch <- string(data)
+	}()
+
+	f()
+
+	w.Close()
+	os.Stderr = orig
+
+	return <-ch
 }

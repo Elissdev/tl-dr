@@ -76,6 +76,40 @@ func TestProtectedAPIKeyClear(t *testing.T) {
 	}
 }
 
+func TestProtectedAPIKeyBytes(t *testing.T) {
+	os.Setenv("TLDR_API_KEY", "sk-test-bytes")
+	defer os.Unsetenv("TLDR_API_KEY")
+
+	key, err := LoadAPIKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("Bytes retorna cópia do slice interno", func(t *testing.T) {
+		b := key.Bytes()
+		if b == nil {
+			t.Fatal("Bytes() = nil, want non-nil")
+		}
+		if string(b) != "sk-test-bytes" {
+			t.Errorf("Bytes() = %q, want %q", string(b), "sk-test-bytes")
+		}
+
+		// Modificar o slice retornado NÃO deve afetar o original (é cópia)
+		b[0] = 'X'
+		if key.Get() != "sk-test-bytes" {
+			t.Errorf("Get() após modificar Bytes() = %q, want %q", key.Get(), "sk-test-bytes")
+		}
+	})
+
+	t.Run("Bytes após Clear retorna slice zerado", func(t *testing.T) {
+		key.Clear()
+		b := key.Bytes()
+		if b != nil {
+			t.Error("Bytes() após Clear deveria retornar nil")
+		}
+	})
+}
+
 func TestProtectedAPIKeyGetCopy(t *testing.T) {
 	os.Setenv("TLDR_API_KEY", "sk-copy-test")
 	defer os.Unsetenv("TLDR_API_KEY")

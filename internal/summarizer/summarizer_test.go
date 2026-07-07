@@ -44,8 +44,8 @@ func TestNew(t *testing.T) {
 		if s.model != "test-model" {
 			t.Errorf("model = %q, want %q", s.model, "test-model")
 		}
-		if s.apiKey != "sk-test" {
-			t.Errorf("apiKey = %q, want %q", s.apiKey, "sk-test")
+		if string(s.apiKey) != "sk-test" {
+			t.Errorf("apiKey = %q, want %q", string(s.apiKey), "sk-test")
 		}
 	})
 
@@ -154,7 +154,7 @@ func TestSummarize(t *testing.T) {
 		}
 	})
 
-	t.Run("finish_reason = length", func(t *testing.T) {
+	t.Run("finish_reason = length retorna conteúdo parcial", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{
@@ -176,12 +176,15 @@ func TestSummarize(t *testing.T) {
 
 		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
 
-		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		result, err := s.Summarize(context.Background(), "Sistema", "Texto")
 		if err == nil {
 			t.Fatal("Summarize() com length = nil, want erro")
 		}
-		if !strings.Contains(err.Error(), "truncado") {
-			t.Errorf("erro = %q, want contendo 'truncado'", err.Error())
+		if !errors.Is(err, ErrTruncated) {
+			t.Errorf("errors.Is(err, ErrTruncated) = false, want true")
+		}
+		if result != "Resumo parcial..." {
+			t.Errorf("Summarize() = %q, want %q", result, "Resumo parcial...")
 		}
 	})
 
@@ -368,7 +371,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	s := newTestClient(t, "sk-my-secret-key-12345", "https://api.example.com/v1", "test-model", 5*time.Second)
 
 	t.Run("chave sk- no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("timeout with key sk-abcdefghijklmnopqrstuvwxyz123456"))
+		err := s.classifyAPIError(fmt.Errorf("timeout with key sk-abcdefghijklmnopqrstuvwxyz123456"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-abcdefghijklmnopqrstuvwxyz") {
 			t.Errorf("chave sk- não deveria aparecer: %q", err.Error())
 		}
@@ -378,21 +381,21 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	})
 
 	t.Run("chave sk-proj- no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("error: sk-proj-abcdefghijklmnopqrstuvwxyz123456"))
+		err := s.classifyAPIError(fmt.Errorf("error: sk-proj-abcdefghijklmnopqrstuvwxyz123456"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-proj-") {
 			t.Errorf("chave sk-proj- não deveria aparecer: %q", err.Error())
 		}
 	})
 
 	t.Run("api_key= no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("invalid api_key=sk-test-key-here-12345"))
+		err := s.classifyAPIError(fmt.Errorf("invalid api_key=sk-test-key-here-12345"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-test-key") {
 			t.Errorf("api_key não deveria aparecer: %q", err.Error())
 		}
 	})
 
 	t.Run("token= no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("invalid token=ghp_12345678901234567890"))
+		err := s.classifyAPIError(fmt.Errorf("invalid token=ghp_12345678901234567890"), s.apiKey)
 		if strings.Contains(err.Error(), "ghp_123456") {
 			t.Errorf("token não deveria aparecer: %q", err.Error())
 		}
@@ -400,7 +403,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("chave da própria API no erro", func(t *testing.T) {
 		// A chave configurada no client é "sk-my-secret-key-12345"
-		err := s.classifyAPIError(fmt.Errorf("error: authentication failed for key 'sk-my-secret-key-12345'"))
+		err := s.classifyAPIError(fmt.Errorf("error: authentication failed for key 'sk-my-secret-key-12345'"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-my-secret-key-12345") {
 			t.Errorf("chave configurada não deveria aparecer: %q", err.Error())
 		}
@@ -410,7 +413,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	})
 
 	t.Run("erro de rede comum", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("connection refused"))
+		err := s.classifyAPIError(fmt.Errorf("connection refused"), s.apiKey)
 		if err == nil {
 			t.Fatal("classifyAPIError(nil-like) = nil, want erro")
 		}
@@ -421,7 +424,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("erro de timeout preserva cadeia via errors.Is", func(t *testing.T) {
 		original := fmt.Errorf("connection timeout: %w", context.DeadlineExceeded)
-		err := s.classifyAPIError(original)
+		err := s.classifyAPIError(original, s.apiKey)
 		// A mensagem exibida ao usuário (Error()) deve ser a versão tratada
 		if !strings.Contains(err.Error(), "tempo limite") {
 			t.Errorf("mensagem deveria conter 'tempo limite': %q", err.Error())
@@ -434,16 +437,80 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("ErrTimeout detectável via errors.Is", func(t *testing.T) {
 		original := fmt.Errorf("request timeout: %w", context.DeadlineExceeded)
-		err := s.classifyAPIError(original)
+		err := s.classifyAPIError(original, s.apiKey)
 		if !errors.Is(err, ErrTimeout) {
 			t.Error("errors.Is(err, ErrTimeout) = false, want true")
 		}
 	})
 }
 
+func TestClientClear(t *testing.T) {
+	t.Run("Clear zera apiKey e marca como limpo", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"id":"x","object":"chat.completion","created":0,"model":"m","choices":[]}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-secret-to-clear", server.URL, "test-model", 5*time.Second)
+
+		// Verifica estado inicial
+		if s.cleared {
+			t.Error("cleared = true antes de Clear()")
+		}
+		if string(s.apiKey) != "sk-secret-to-clear" {
+			t.Errorf("apiKey = %q, want %q", string(s.apiKey), "sk-secret-to-clear")
+		}
+
+		s.Clear()
+
+		// Verifica que o slice foi zerado byte a byte
+		if s.apiKey != nil {
+			t.Error("apiKey não foi setado para nil após Clear()")
+		}
+		if !s.cleared {
+			t.Error("cleared = false após Clear(), want true")
+		}
+	})
+
+	t.Run("Summarize após Clear retorna erro", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
+		s.Clear()
+
+		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Error("Summarize() após Clear() deveria retornar erro, mas retornou nil")
+		}
+		if !strings.Contains(err.Error(), "usado após Clear") {
+			t.Errorf("erro = %q, want contendo 'usado após Clear'", err.Error())
+		}
+	})
+
+	t.Run("Clear duplo não panica", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
+		s.Clear()
+		s.Clear() // não deve panicar
+		if !s.cleared {
+			t.Error("cleared = false após double Clear()")
+		}
+	})
+}
+
 func TestRedactCredentials(t *testing.T) {
 	t.Run("redige chave configurada", func(t *testing.T) {
-		result := redactCredentials("my-api-key-12345 is secret", "my-api-key-12345")
+		result := redactCredentials("my-api-key-12345 is secret", []byte("my-api-key-12345"))
 		if strings.Contains(result, "my-api-key-12345") {
 			t.Errorf("chave não redigida: %q", result)
 		}
@@ -453,15 +520,22 @@ func TestRedactCredentials(t *testing.T) {
 	})
 
 	t.Run("apiKey vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("some error message", "")
+		result := redactCredentials("some error message", nil)
 		if result != "some error message" {
 			t.Errorf("resultado inesperado: %q", result)
 		}
 	})
 
 	t.Run("string vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("", "sk-test-key")
+		result := redactCredentials("", []byte("sk-test-key"))
 		if result != "" {
+			t.Errorf("resultado inesperado: %q", result)
+		}
+	})
+
+	t.Run("slice vazio não quebra", func(t *testing.T) {
+		result := redactCredentials("some error message", []byte{})
+		if result != "some error message" {
 			t.Errorf("resultado inesperado: %q", result)
 		}
 	})

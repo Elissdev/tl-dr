@@ -262,6 +262,18 @@ func buildPrompt(outputLang, customPrompt string) string {
 
 // injectionPatterns são padrões de prompt injection conhecidos que devem
 // ser removidos de prompts customizados.
+// injectionKeywords são palavras-chave de prompt injection para pré-filtro rápido.
+// Se o prompt não contiver nenhuma delas, as regexes são puladas por completo,
+// evitando scan desnecessário para prompts inocentes.
+var injectionKeywords = []string{
+	"ignore", "reveal", "show", "print", "display",
+	"leak", "output", "dump", "expose", "forget",
+	"disregard", "override", "skip", "you are",
+	"you must", "you will", "im_start", "im_end",
+}
+
+// injectionPatterns são padrões de prompt injection conhecidos que devem
+// ser removidos de prompts customizados.
 var injectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bignore\s+(all\s+)?(previous|above|prior|system)\s+(instructions|prompts?|commands?|directives?|rules?|messages?)`),
 	regexp.MustCompile(`(?i)\b(reveal|show|print|display|leak|output|dump|expose)\s+(your|the|internal|system|hidden|secret)\s+(instructions?|prompts?|commands?|directives?|rules?|system\s*message|config|configuration)`),
@@ -269,6 +281,14 @@ var injectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\byou\s+(are|must|will)\s+(now|free|release|unleash|act)`),
 	regexp.MustCompile(`(?i)\<\|\s*(im_start|im_end|system|user|assistant)\s*\|\>`),
 }
+
+// spaceRun colapsa espaços/tabs duplicados (preserva newlines).
+// Compilado uma vez em package-level por questões de performance.
+var spaceRun = regexp.MustCompile(`[ \t]+`)
+
+// allRemoved detecta se o prompt contém apenas marcações [REMOVED].
+// Compilado uma vez em package-level por questões de performance.
+var allRemoved = regexp.MustCompile(`^(\[REMOVED\]([ \t]+)?)+$`)
 
 // sanitizePrompt detecta e remove tentativas de prompt injection em prompts
 // customizados fornecidos pelo usuário via --prompt.
@@ -285,19 +305,31 @@ func sanitizePrompt(prompt string) (string, error) {
 	}
 
 	original := prompt
-	for _, re := range injectionPatterns {
-		prompt = re.ReplaceAllString(prompt, "[REMOVED] ")
+
+	// Pré-filtro rápido: se o prompt não contiver nenhuma palavra-chave
+	// de injection conhecida, evita o scan completo com regexes.
+	hasKeyword := false
+	promptLower := strings.ToLower(prompt)
+	for _, kw := range injectionKeywords {
+		if strings.Contains(promptLower, kw) {
+			hasKeyword = true
+			break
+		}
+	}
+
+	if hasKeyword {
+		for _, re := range injectionPatterns {
+			prompt = re.ReplaceAllString(prompt, "[REMOVED] ")
+		}
 	}
 
 	// Colapsa espaços/tabs duplicados (preserva newlines)
-	spaceRun := regexp.MustCompile(`[ \t]+`)
 	prompt = spaceRun.ReplaceAllString(prompt, " ")
 	prompt = strings.TrimSpace(prompt)
 
 	// Se depois de remover tudo não sobrou nada útil, bloqueia com erro.
 	// "[REMOVED]" sozinho ou "[REMOVED] [REMOVED]" indicam
 	// que o prompt inteiro era composto de padrões de injeção.
-	allRemoved := regexp.MustCompile(`^(\[REMOVED\]([ \t]+)?)+$`)
 	if prompt == "" || allRemoved.MatchString(prompt) {
 		return "", errors.New("prompt customizado bloqueado: continha apenas padrões de injeção")
 	}
@@ -331,22 +363,14 @@ func sanitizeOutput(s string) string {
 	// utf8Remaining rastreia quantos bytes de continuação UTF-8 esperamos
 	// após um caractere multi-byte. Quando > 0, bytes 0x80-0xBF são
 	// continuation bytes legítimos, não controles C1.
+	//
+	// NOTA: Só atualizamos utf8Remaining quando o byte é efetivamente
+	// escrito no resultado. Bytes descartados (ESC, C0, C1) nunca
+	// alteram o tracking, evitando desincronização.
 	utf8Remaining := 0
 
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-
-		// Atualiza estado UTF-8 antes de processar o byte
-		if c >= 0xC0 && c <= 0xDF {
-			// Início de sequência UTF-8 de 2 bytes
-			utf8Remaining = 1
-		} else if c >= 0xE0 && c <= 0xEF {
-			// Início de sequência UTF-8 de 3 bytes
-			utf8Remaining = 2
-		} else if c >= 0xF0 && c <= 0xF7 {
-			// Início de sequência UTF-8 de 4 bytes
-			utf8Remaining = 3
-		}
 
 		// Bytes 0x80-0x9F: podem ser continuation bytes UTF-8 OU controles C1.
 		// Se estamos esperando continuation bytes, passa direto (é UTF-8 válido).
@@ -455,12 +479,9 @@ func sanitizeOutput(s string) string {
 					}
 					i--
 				default:
-					// ESC seguido de byte não C1 conhecido
-					// ATENÇÃO: utf8Remaining é irrelevante aqui pois ESC (0x1b)
-					// nunca faz parte de uma sequência UTF-8 válida — ele sempre
-					// interrompe qualquer sequência multi-byte em andamento.
-					// Portanto, bytes >= 0x80 após ESC nunca são continuation
-					// bytes UTF-8 legítimos e devem ser pulados.
+					// ESC seguido de byte não C1 conhecido.
+					// ESC nunca faz parte de UTF-8 válido, portanto bytes >= 0x80
+					// após ESC nunca são continuation bytes legítimos.
 					if c2 >= 0x80 {
 						// Pula todos os bytes de continuação
 						i++
@@ -482,13 +503,24 @@ func sanitizeOutput(s string) string {
 			continue
 		}
 
-		result.WriteByte(c)
-
-		// Decrementa utf8Remaining para continuation bytes (0x80-0xBF)
-		// que foram escritos acima no `else` final.
-		if c >= 0x80 && c <= 0xBF && utf8Remaining > 0 {
+		// A partir daqui o byte será escrito — atualizamos o tracking UTF-8
+		// APENAS para bytes que serão preservados na saída.
+		if c >= 0xC0 && c <= 0xDF {
+			// Início de sequência UTF-8 de 2 bytes
+			utf8Remaining = 1
+		} else if c >= 0xE0 && c <= 0xEF {
+			// Início de sequência UTF-8 de 3 bytes
+			utf8Remaining = 2
+		} else if c >= 0xF0 && c <= 0xF7 {
+			// Início de sequência UTF-8 de 4 bytes
+			utf8Remaining = 3
+		} else if c >= 0x80 && c <= 0xBF && utf8Remaining > 0 {
+			// Continuation byte (0x80-0xBF) que não foi capturado
+			// pelo bloco C1 acima (faixa 0xA0-0xBF)
 			utf8Remaining--
 		}
+
+		result.WriteByte(c)
 	}
 
 	return result.String()

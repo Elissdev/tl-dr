@@ -48,7 +48,7 @@ func checkEnvPermissions() {
 	if len(warnings) > 0 {
 		msg := fmt.Sprintf("%s.env tem permissões %04o — %s. Recomendado: chmod 600 .env\n",
 			envPermsWarn, perm, warnings[0])
-		os.Stderr.WriteString(msg)
+		_, _ = os.Stderr.WriteString(msg)
 	}
 }
 

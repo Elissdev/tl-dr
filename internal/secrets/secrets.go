@@ -3,6 +3,7 @@ package secrets
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // ProtectedAPIKey encapsula uma chave de API e fornece um método para
@@ -29,7 +30,8 @@ func LoadAPIKey() (*ProtectedAPIKey, error) {
 
 	// 2. Tenta ler de TLDR_API_KEY_FILE
 	if path := os.Getenv("TLDR_API_KEY_FILE"); path != "" {
-		data, err := os.ReadFile(path)
+		cleanPath := filepath.Clean(path)
+		data, err := os.ReadFile(cleanPath)
 		if err != nil {
 			return nil, fmt.Errorf("TLDR_API_KEY_FILE %q: %w", path, err)
 		}

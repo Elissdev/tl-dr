@@ -32,7 +32,15 @@ const envPermsWarn = "⚠️  WARNING: "
 func checkFilePermissions(path string) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return // arquivo não existe ou não pode ser lido — sem warning
+		if !os.IsNotExist(err) {
+			// Erro inesperado ao acessar o arquivo (ex: permissão negada no
+			// diretório pai, broken symlink, filesystem offline). Avisamos no
+			// stderr para debug, sem interromper o fluxo.
+			msg := fmt.Sprintf("%s%s: não foi possível verificar permissões: %v\n",
+				envPermsWarn, path, err)
+			_, _ = os.Stderr.WriteString(msg)
+		}
+		return
 	}
 	if info.IsDir() {
 		return

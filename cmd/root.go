@@ -106,7 +106,11 @@ Exemplos de uso:
 			}
 
 			// 4. Sanitizar prompt customizado (previne prompt injection)
-			sanitizedCustom := sanitizePrompt(*customPrompt)
+			sanitizedCustom, err := sanitizePrompt(*customPrompt)
+			if err != nil {
+				return WrapExitError(ExitArgs,
+					fmt.Errorf("segurança: %w", err))
+			}
 
 			// 5. Construir prompt
 			finalPrompt := buildPrompt(resolvedLang, sanitizedCustom)
@@ -265,14 +269,14 @@ var injectionPatterns = []*regexp.Regexp{
 
 // sanitizePrompt detecta e remove tentativas de prompt injection em prompts
 // customizados fornecidos pelo usuário via --prompt.
-// Retorna o prompt sanitizado ou um erro (como string) se for detectado
-// um ataque claro.
+// Retorna o prompt sanitizado ou um erro se for detectado um ataque claro
+// (quando todo o prompt é composto por padrões de injeção).
 //
 // Estratégia: padrões de injection são removidos do prompt. Se após a
-// remoção o prompt ficar vazio, retorna um aviso de segurança.
-func sanitizePrompt(prompt string) string {
+// remoção o prompt ficar vazio, retorna um erro de segurança.
+func sanitizePrompt(prompt string) (string, error) {
 	if prompt == "" {
-		return ""
+		return "", nil
 	}
 
 	original := prompt
@@ -280,18 +284,18 @@ func sanitizePrompt(prompt string) string {
 		prompt = re.ReplaceAllString(prompt, "[REMOVED]")
 	}
 
-	// Se depois de remover tudo não sobrou nada útil, retorna um aviso
+	// Se depois de remover tudo não sobrou nada útil, bloqueia com erro
 	stripped := strings.TrimSpace(prompt)
 	if stripped == "" || stripped == "[REMOVED]" {
-		return "[AVISO DE SEGURANÇA: O prompt customizado foi bloqueado por conter padrões de injeção]"
+		return "", errors.New("prompt customizado bloqueado: continha apenas padrões de injeção")
 	}
 
-	// Se houve remoção, adiciona um marcador
+	// Se houve remoção parcial, retorna o prompt sanitizado
 	if prompt != original {
-		return prompt
+		return prompt, nil
 	}
 
-	return prompt
+	return prompt, nil
 }
 
 // sanitizeOutput remove sequências de escape ANSI potencialmente maliciosas

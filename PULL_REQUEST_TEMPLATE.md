@@ -1,125 +1,172 @@
-# Pull Request — Fase 2: Configuração via Variáveis de Ambiente
+# Pull Request #14 — Conclusão das 11 Code Reviews
 
-> **Branch:** `feat/fase-2-config`
+> **Branch:** `feat/fase-3-input-refactor`
 > **Base:** `main`
-> **Status:** 🟡 Em revisão
+> **Status:** 🟢 Pronto para merge
 
 ---
 
 ## 📋 Resumo
 
-Esta PR conclui a **Fase 2** do projeto tl;dr, trazendo melhorias na configuração via variáveis de ambiente, validação mais robusta, suporte a arquivo `.env`, suporte a prompts em português, e diversas melhorias de segurança e qualidade.
+Esta PR consolida **11 rodadas de code review** sobre a Fase 3, resultando em melhorias de **segurança**, **robustez**, **testabilidade** e **qualidade de código** no tl;dr. As principais áreas afetadas são: proteção contra prompt injection, sanitização de saída, redação estendida de credenciais, timeout configurável em stdin, eliminação de TOCTOU, e refatoração do comando raiz para testabilidade isolada.
 
 ---
 
-## 🚀 Novas Funcionalidades
+## 🔴 Breaking Changes na API Pública
 
-### 🌐 Suporte a arquivo `.env`
-- Adicionada dependência `github.com/joho/godotenv v1.5.1`
-- `config.Load()` tenta carregar automaticamente um arquivo `.env` na raiz do projeto
-- Se o arquivo não existir, ignora silenciosamente (compatibilidade retroativa)
-- Se existir mas tiver erro de parsing, retorna erro explicitamente
+### `summarizer.New()` agora retorna `(*Client, error)`
 
-### 🇧🇷 Prompt padrão em português
-- Quando o idioma é `pt-br` ou `pt`, o prompt padrão usa template em português:
-  - **Antes:** `"Summarize the following text in pt-br. Be concise but capture all key points."`
-  - **Agora:** `"Resuma o texto a seguir em pt-br. Seja conciso mas capture todos os pontos-chave."`
-- Demais idiomas continuam usando o template em inglês
-
----
-
-## 🔄 Mudanças na API Interna
-
-### `config.Load()` agora retorna `(Config, error)` — **BREAKING CHANGE**
 ```go
-// Antes (Fase 1)
-cfg := config.Load()
+// Antes
+s := summarizer.New(cfg)    // *Summarizer (nunca nil)
 
-// Depois (Fase 2)
-cfg, err := config.Load()
-if err != nil {
-    // tratar erro
-}
+// Depois
+s, err := summarizer.New(cfg) // (*Client, error)
+if err != nil { /* APIKey/Model/BaseURL vazio */ }
 ```
 
-### Método `Validate()` removido
-- A validação agora é feita durante o `Load()`, eliminando o passo extra
-- Código cliente: `config.Load()` → `cfg.Clear()` (sem `cfg.Validate()` intermediário)
+### Struct `Summarizer` renomeada para `Client`
+
+Qualquer referência direta a `summarizer.Summarizer` quebra.
+
+### Constantes de exit code renomeadas
+
+| Antes | Depois |
+|-------|--------|
+| `ExitSuccess` | `ExitOK` |
+| `ExitGenericError` | `ExitInternal` |
+| `ExitAPIError` | `ExitAPI` |
+| `ExitArgumentError` | `ExitArgs` |
+| *(nova)* | `ExitTimeout = 4` |
+
+### Renomeações no pacote `input`
+
+| Antes | Depois |
+|-------|--------|
+| `input.ReadFile()` | `input.ReadFromFile()` |
+| `input.ReadStdin()` | `input.ReadFromStdin()` |
+| `input.IsStdinAvailable()` | `input.IsStdinRedirected()` |
 
 ---
 
-## ✨ Novas Validações
+## 🟠 Breaking Changes Comportamentais
 
-| Variável | Validação | Comportamento Anterior |
-|----------|-----------|----------------------|
-| `TLDR_BASE_URL` | Validada como URL via `url.ParseRequestURI()` | Aceita qualquer valor |
-| `TLDR_TIMEOUT` | Valor não numérico agora retorna erro | Ignorado silenciosamente (usava padrão) |
-| Chave de API | Mensagem de erro mais genérica | Culpava exclusivamente `TLDR_API_KEY` |
+- **`ReadFromStdin()` rejeita stdin vazio**: antes retornava `("", nil)`, agora retorna erro
+- **`ReadFromStdin()` rejeita terminal interativo**: se stdin for um terminal sem pipe/redirect, erro imediato
+- **Timeout de 30s no stdin**: se o pipe não enviar dados em 30s, a leitura falha com erro de timeout
+- **`buildPrompt()` agora inclui prefixo de segurança** imutável contra prompt injection, antes de qualquer prompt customizado ou padrão
+- **Saída sanitizada por padrão**: ANSI escape codes (CSI, OSC, DCS, SOS, PM, APC) são removidos automaticamente. Use `--no-sanitize` para desabilitar
+- **`cfg.Clear()` movido para `defer`**: a chave de API é zerada apenas no retorno do comando
+- **Modelo default hardcoded**: se `TLDR_DEFAULT_MODEL` não for definido, usa `deepseek/deepseek-v4-flash`
 
 ---
 
-## 🔒 Segurança
+## 🟢 Novas Funcionalidades
 
-- **`ProtectedAPIKey.Clear()` nil-safe**: chamar `Clear()` em ponteiro `nil` não causa pânico
-- **Double-clear seguro**: chamar `Clear()` duas vezes consecutivas não causa pânico
-- **Teste byte a byte**: verificação de que todos os bytes do slice interno são zerados
-- **Documentação da sanitização**: regex de redação de chaves tem escopo explicitamente documentado (aplicada **apenas** em mensagens de erro, nunca no conteúdo do usuário)
-- **Ordem do `cfg.Clear()` documentada**: comentário de segurança em `root.go` alertando que `Clear()` deve permanecer após a cópia da chave para `summarizer.Config`
+### Segurança
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| 🔒 **Safety prefix anti-prompt injection** | Prefixo imutável em pt (`SafetyPrefixPT`) e en (`SafetyPrefixEN`) inserido antes de todo prompt |
+| 🧹 **`sanitizeOutput()`** | Remove CSI, OSC, DCS, SOS, PM, APC sequences e caracteres de controle (exceto `\t`, `\n`, `\r`) |
+| 🚫 **Flag `--no-sanitize`** | Desabilita a sanitização de escape codes (útil se o terminal já processa cores) |
+| 🕵️ **Redação estendida de credenciais** | Agora cobre: OpenAI (`sk-`, `sk-proj-`), DeepSeek, Anthropic (`sk-ant-`), GitHub PAT (`ghp_`), JWT, `api_key=`, `token=`, fallback genérico 60+ chars |
+| 🔑 **Redação da própria chave** | A chave da API configurada no `Client` também é redigida em mensagens de erro |
+| 🔗 **`redactedError` preserva cadeia** | Erros redigidos preservam o erro original via `Unwrap()` para `errors.Is`/`errors.As` |
+
+### CLI
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| 🏷️ **Flag `--version` / `-v`** | Exibe versão do binário (injetada via ldflags no `Makefile`) |
+| ⏱️ **Flag `--timeout` / `-t`** | Timeout customizável via CLI (sobrescreve `TLDR_TIMEOUT`) |
+| 🌐 **Feedback visual no stderr** | Exibe idioma e modelo usados, além de "📝 Resumindo..." |
+| ⚠️ **Truncamento parcial** | Se a resposta for truncada (`finish_reason=length`), exibe o conteúdo parcial + aviso no stderr |
+
+### Engine
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| 📦 **`ErrTruncated`** | Sentinel error para respostas truncadas — retorna conteúdo parcial + erro |
+| ⏰ **`ErrTimeout`** | Sentinel error para timeout — detectável via `errors.Is(err, summarizer.ErrTimeout)` |
+| 🗺️ **`getLocale()`** | Sistema de localização com `localeConfig` (SafetyPrefix + DefaultPrompt + RespondIn) |
+| ➕ **`firstNonEmpty()`** | Helper para resolver precedência: flag > env > default |
+| 🧪 **`newRootCommand()`** | Comando raiz agora é construído por função (sem estado global/`init()`), permitindo testes isolados |
+| 🧪 **`ReadFromStdinWithTimeout()`** | Versão testável da leitura de stdin com timeout customizável |
+
+---
+
+## 🔧 Melhorias Técnicas
+
+### Correções de segurança/qualidade
+
+| Issue | Solução |
+|-------|---------|
+| **TOCTOU em `ReadFromFile`** | `os.Open()` primeiro, `f.Stat()` depois, `io.ReadAll(limitReader)` — eliminado race entre Stat e ReadFile |
+| **TOCTOU em `ReadFromStdin`** | Verificação de terminal movida para dentro da função (antes era externa) |
+| **Goroutine leak em timeout** | Leitura de stdin em goroutine com `context.WithTimeout` + canal com buffer 1 |
+| **`unsafe` removido de `secrets`** | Uso de `unsafe.Pointer` para zerar buffer de string não é confiável em Go moderno; agora apenas copia para `[]byte` controlado |
+| **Validação de URL** | Agora exige `http://` ou `https://` no scheme (antes aceitava qualquer URI) |
+| **`summarizer.New()` valida campos** | `APIKey`, `Model` e `BaseURL` vazios retornam erro (antes aceitavam silenciosamente) |
+| **Content vazio com `finish_reason=stop`** | Novo caso de erro detectado e reportado |
+
+### Padrões de código
+
+| Melhoria | Detalhe |
+|----------|---------|
+| **Sem estado global/`init()`** | `newRootCommand()` retorna um comando novo a cada chamada, flags via ponteiros |
+| **Variáveis globais eliminadas** | `lang`, `model`, `customPromptFlag` removidas — agora são ponteiros locais do `cobra.Command` |
+| **`getEnv` renomeado para `envOr`** | Nome mais semântico |
+| **`SupportedLocales` como mapa** | Adicionar novo idioma = adicionar entrada no mapa |
+| **`apiKeyRedactors` como slice de regexes** | Em vez de uma regex gigante, lista de patterns específicos e documentados |
+| **`newTestClient()` helper** | Elimina repetição de `summarizer.New` + `t.Fatalf` nos testes |
 
 ---
 
 ## 🧪 Testes
 
-### Novos testes adicionados
-- `TestBuildPrompt` — casos `pt-br` e `pt` com template em português
-- `TestLoad` — URL base inválida (`://invalida`) retorna erro
-- `TestLoad` — `TLDR_TIMEOUT` inválido retorna erro (antes usava default silenciosamente)
-- `TestLoad` — sem API key agora verifica campos do `Config` retornado (APIKey vazia, BaseURL default, DefaultModel default)
-- `TestClear` — double-clear não causa pânico
-- `TestIsStdinAvailable` — simula pipe real com `os.Pipe()` (true) e terminal (false, sem panic)
+### Testes de unidade adicionados
 
-### Testes melhorados
-- `TestProtectedAPIKeyClear` — verificação byte a byte do buffer interno
-
----
-
-## 📝 Documentação
-
-- Comentários em `NewExitError`/`WrapExitError` com exemplos de uso:
-  ```go
-  // Exemplo: return NewExitError(ExitArgumentError, "idioma é obrigatório")
-  // Exemplo: return WrapExitError(ExitGenericError, err)
-  ```
-- Comentário de segurança sobre a ordem do `cfg.Clear()` em `root.go`
-- Documentação da dupla validação de timeout em `summarizer.New()` (redundância segura)
-- Comentário de fallback seguro em `main.go` para casos de pânico recuperado
+| Teste | O que cobre |
+|-------|-------------|
+| `TestBuildPrompt` | Prefixo de segurança + sufixo correto para en, pt, pt-br, es |
+| `TestBuildPromptSafetyPrefixAlwaysPresent` | Todas as combinações de idioma sempre incluem safety prefix |
+| `TestSanitizeOutput` | CSI, OSC, DCS, SOS, PM, APC, newlines, tabs, CR, string vazia |
+| `TestSanitizeOutputEdgeCases` | ESC isolado, CSI/OSC incompleto, ESC + controle, múltiplos ESC, unicode |
+| `TestGetLocale` | pt-br, pt, en, idioma desconhecido, não quebra existentes |
+| `TestFirstNonEmpty` | Vários casos: preenchido, vazios, slice vazio |
+| `TestExecute` | langPattern válido/inválido, `--no-sanitize`, sem API key, env vars, idioma inválido, arquivo inexistente |
+| `TestNew` (summarizer) | Config válida, API key vazia, modelo vazio, base URL vazia, timeout zero |
+| `TestSummarize` | `finish_reason=stop` vazio, erro 400 |
+| `TestClassifyAPIErrorSanitization` | Chave sk-, sk-proj-, api_key=, token=, própria chave, timeout, `errors.Is(ErrTimeout)` |
+| `TestRedactCredentials` | Redige chave configurada, apiKey vazia, string vazia |
+| Stdin timeout | `ReadFromStdinWithTimeout` com pipe lento |
+| `TestIsStdinRedirected` | Pipe retorna true (determinístico) |
 
 ---
 
-## 🔧 Manutenção
+## 📦 Arquivos Modificados (18 arquivos)
 
-- Função auxiliar `cfgZeroed()` removida (substituída por inicialização inline)
-- `go.mod`/`go.sum` atualizados com dependência `joho/godotenv`
-
----
-
-## 📦 Arquivos Modificados (13 arquivos)
-
-| Arquivo | Tipo de Mudança |
-|---------|----------------|
-| `cmd/errors.go` | 📝 Documentação |
-| `cmd/root.go` | 🔄 Refatoração + 🇧🇷 Prompts pt |
-| `cmd/root_test.go` | 🧪 Novos testes |
-| `internal/config/config.go` | ⚡ Validações + .env + error |
-| `internal/config/config_test.go` | 🧪 Novos testes |
-| `internal/input/input_test.go` | 🧪 Teste de pipe real |
-| `internal/secrets/secrets.go` | 🔒 Nil-safe Clear |
-| `internal/secrets/secrets_test.go` | 🧪 Byte-level + double-clear |
-| `internal/summarizer/summarizer.go` | 📝 Documentação |
-| `main.go` | 📝 Documentação fallback |
-| `go.mod` | ➕ godotenv |
-| `go.sum` | ➕ Checksums |
-| `CHANGELOG.md` | 📝 Registro de versão |
+| Arquivo | Mudanças |
+|---------|----------|
+| `.github/workflows/ci.yml` | ➕ Race detector + gosec security scan |
+| `CHANGELOG.md` | 📝 Documentação das mudanças |
+| `Makefile` | 🔧 Versão via ldflags |
+| `PULL_REQUEST_TEMPLATE.md` | 📝 Este documento |
+| `README.md` | 📝 Flags `--no-sanitize`, `--timeout`, `--version`; exit codes; env vars |
+| `cmd/errors.go` | 🔴 Exit codes renomeados + `ExitTimeout` |
+| `cmd/errors_test.go` | 🧪 Atualizado para novos exit codes |
+| `cmd/root.go` | 🔄 Refatoração completa (84% rewrite) |
+| `cmd/root_test.go` | 🧪 +436 linhas de novos testes |
+| `go.mod` | ➕ godotenv como dependência direta |
+| `internal/config/config.go` | 🔧 `envOr()`, validação de scheme http/https |
+| `internal/input/input.go` | 🔧 TOCTOU, timeout, ~ expansion, `ReadFromStdinWithTimeout` |
+| `internal/input/input_test.go` | 🧪 Stdin timeout, `IsStdinRedirected` |
+| `internal/integration/summarizer_test.go` | 🧪 `//go:build integration`, `summarizer.New()` error |
+| `internal/secrets/secrets.go` | 🔒 `unsafe` removido |
+| `internal/summarizer/summarizer.go` | 🔴 `Client` + `(*Client, error)`, `ErrTruncated`, `ErrTimeout`, redação |
+| `internal/summarizer/summarizer_test.go` | 🧪 `newTestClient`, novos testes |
+| `.gitignore` | 🔧 Ignorar `teste.txt`, `me explique...` |
 
 ---
 
@@ -127,26 +174,26 @@ if err != nil {
 
 - [ ] Testes passam (`make test`)
 - [ ] Testes com race detector (`make test-race`)
-- [ ] Testes de integração (opcional, `make test-integration`)
 - [ ] Lint passa (`make lint`)
 - [ ] Build passa (`make build`)
-- [ ] `config.Load()` agora retorna erro e o chamador trata adequadamente
-- [ ] `Validate()` foi removido de todos os callers
-- [ ] `.env` é carregado sem quebrar ambientes sem o arquivo
-- [ ] Chave de API é limpa da memória (`cfg.Clear()`) após uso
-- [ ] Prompt em português funciona para `pt-br` e `pt`
-- [ ] `TLDR_BASE_URL` inválida retorna erro
-- [ ] `TLDR_TIMEOUT` inválido retorna erro
-- [ ] CHANGELOG atualizado
+- [ ] `summarizer.New()` trata erro de retorno em todos os callers
+- [ ] Prefixo de segurança contra prompt injection está presente em todos os prompts
+- [ ] Saída é sanitizada por padrão (ANSI removido)
+- [ ] `--no-sanitize` desabilita a sanitização
+- [ ] Timeout no stdin funciona (pipe travado não trava o CLI)
+- [ ] Redação de credenciais cobre todos os formatos conhecidos
+- [ ] `errors.Is(err, summarizer.ErrTimeout)` funciona
+- [ ] `errors.Is(err, summarizer.ErrTruncated)` com conteúdo parcial
+- [ ] TOCTOU eliminado em `ReadFromFile` e `ReadFromStdin`
+- [ ] `cfg.Clear()` via `defer` (não antes)
+- [ ] `--version` exibe a versão correta
+- [ ] `--timeout` sobrescreve `TLDR_TIMEOUT`
+- [ ] CHANGELOG e PULL_REQUEST_TEMPLATE atualizados
 
 ---
 
 ## 🔗 Links
 
-- [Especificação do projeto](./projeto.md)
 - [CHANGELOG](./CHANGELOG.md)
 - [README](./README.md)
-
----
-
-> **Nota:** Esta PR contém tanto o diff estrutural da Fase 2 (validations, `Load() error`) quanto melhorias incrementais (`.env`, prompts pt, nil-safe, testes).
+- [Especificação do projeto](./projeto.md)

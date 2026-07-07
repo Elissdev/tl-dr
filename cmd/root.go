@@ -73,6 +73,8 @@ Exemplos de uso:
 			}
 
 			// 2. Resolver modelo e idioma (flag > env/config > default).
+			// As flags foram registradas abaixo (StringP/IntP) e capturadas
+			// como ponteiros na closure. Acessamos via *ponteiro.
 			resolvedModel := firstNonEmpty(*modelFlag, cfg.DefaultModel, "deepseek/deepseek-v4-flash")
 			resolvedLang := firstNonEmpty(*lang, cfg.DefaultLang)
 			if resolvedLang == "" {
@@ -91,23 +93,9 @@ Exemplos de uso:
 			}
 
 			// 3. Ler entrada
-			var text string
-			if len(args) > 0 {
-				data, err := input.ReadFile(args[0])
-				if err != nil {
-					return WrapExitError(ExitArgs, err)
-				}
-				text = data
-			} else {
-				if !input.IsStdinAvailable() {
-					return NewExitError(ExitArgs,
-						"nenhum texto fornecido — passe um arquivo ou pipe via stdin")
-				}
-				data, err := input.ReadStdin()
-				if err != nil {
-					return WrapExitError(ExitArgs, err)
-				}
-				text = data
+			text, err := input.ReadInput(args)
+			if err != nil {
+				return WrapExitError(ExitArgs, err)
 			}
 			if text == "" {
 				return NewExitError(ExitArgs,

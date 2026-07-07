@@ -31,6 +31,10 @@ go.work.sum
 /build/
 /tldr
 
+# Test files (avulsos)
+teste.txt
+me explique como que se eu tivesse 5 anos.txt
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -33,7 +33,7 @@ func TestExitError(t *testing.T) {
 			t.Error("IsAPIError(ExitAPI) = false, want true")
 		}
 
-		genericErr := NewExitError(ExitInternal, "erro genérico")
+		genericErr := NewExitError(ExitInternal, "erro interno")
 		if IsAPIError(genericErr) {
 			t.Error("IsAPIError(ExitInternal) = true, want false")
 		}

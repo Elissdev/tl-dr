@@ -223,7 +223,7 @@ func TestSanitizeOutputEdgeCases(t *testing.T) {
 			want:  "ab",
 		},
 		{
-			name:  "caractere de controle \\x00 isolado",
+			name:  "caractere de controle \x00 isolado",
 			input: "a\x00b\x01c",
 			want:  "abc",
 		},

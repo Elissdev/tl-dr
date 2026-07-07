@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -165,6 +166,33 @@ func TestClear(t *testing.T) {
 	}
 }
 
+func TestAPIKeyBytes(t *testing.T) {
+	setEnv(t, "TLDR_API_KEY", "sk-test-key-bytes")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() erro inesperado: %v", err)
+	}
+
+	t.Run("APIKeyBytes retorna slice com a chave", func(t *testing.T) {
+		b := cfg.APIKeyBytes()
+		if b == nil {
+			t.Fatal("APIKeyBytes() = nil, want non-nil")
+		}
+		if string(b) != "sk-test-key-bytes" {
+			t.Errorf("APIKeyBytes() = %q, want %q", string(b), "sk-test-key-bytes")
+		}
+	})
+
+	t.Run("APIKeyBytes após Clear retorna nil", func(t *testing.T) {
+		cfg.Clear()
+		b := cfg.APIKeyBytes()
+		if b != nil {
+			t.Errorf("APIKeyBytes() após Clear = %q, want nil", string(b))
+		}
+	})
+}
+
 func TestCheckEnvPermissions(t *testing.T) {
 	t.Run("sem .env não emite warning", func(t *testing.T) {
 		// Remove .env temporariamente se existir
@@ -241,7 +269,6 @@ func TestCheckEnvPermissions(t *testing.T) {
 func captureStderr(t *testing.T, f func()) string {
 	t.Helper()
 
-	// Preserva o stderr original
 	orig := os.Stderr
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -249,12 +276,10 @@ func captureStderr(t *testing.T, f func()) string {
 	}
 	os.Stderr = w
 
-	// Canal para receber o resultado
 	ch := make(chan string)
 	go func() {
-		buf := make([]byte, 1024)
-		n, _ := r.Read(buf)
-		ch <- string(buf[:n])
+		data, _ := io.ReadAll(r)
+		ch <- string(data)
 	}()
 
 	f()

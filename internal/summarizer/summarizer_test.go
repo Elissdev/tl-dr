@@ -444,6 +444,70 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	})
 }
 
+func TestClientClear(t *testing.T) {
+	t.Run("Clear zera apiKey e marca como limpo", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"id":"x","object":"chat.completion","created":0,"model":"m","choices":[]}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-secret-to-clear", server.URL, "test-model", 5*time.Second)
+
+		// Verifica estado inicial
+		if s.cleared {
+			t.Error("cleared = true antes de Clear()")
+		}
+		if string(s.apiKey) != "sk-secret-to-clear" {
+			t.Errorf("apiKey = %q, want %q", string(s.apiKey), "sk-secret-to-clear")
+		}
+
+		s.Clear()
+
+		// Verifica que o slice foi zerado byte a byte
+		if s.apiKey != nil {
+			t.Error("apiKey não foi setado para nil após Clear()")
+		}
+		if !s.cleared {
+			t.Error("cleared = false após Clear(), want true")
+		}
+	})
+
+	t.Run("Summarize após Clear panica", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
+		s.Clear()
+
+		defer func() {
+			if r := recover(); r == nil {
+				t.Error("Summarize() após Clear() deveria panicar, mas não panico")
+			}
+		}()
+
+		_, _ = s.Summarize(context.Background(), "Sistema", "Texto")
+	})
+
+	t.Run("Clear duplo não panica", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{}`)
+		}))
+		defer server.Close()
+
+		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
+		s.Clear()
+		s.Clear() // não deve panicar
+		if !s.cleared {
+			t.Error("cleared = false após double Clear()")
+		}
+	})
+}
+
 func TestRedactCredentials(t *testing.T) {
 	t.Run("redige chave configurada", func(t *testing.T) {
 		result := redactCredentials("my-api-key-12345 is secret", []byte("my-api-key-12345"))

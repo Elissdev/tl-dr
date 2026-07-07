@@ -272,8 +272,10 @@ var injectionPatterns = []*regexp.Regexp{
 // Retorna o prompt sanitizado ou um erro se for detectado um ataque claro
 // (quando todo o prompt é composto por padrões de injeção).
 //
-// Estratégia: padrões de injection são removidos do prompt. Se após a
-// remoção o prompt ficar vazio, retorna um erro de segurança.
+// Estratégia: padrões de injection são substituídos por "[REMOVED] " no prompt.
+// Espaços duplicados (não quebras de linha) são colapsados no resultado final.
+// Se após a remoção o prompt contiver apenas marcações [REMOVED] (uma ou mais),
+// retorna um erro de segurança.
 func sanitizePrompt(prompt string) (string, error) {
 	if prompt == "" {
 		return "", nil
@@ -281,12 +283,19 @@ func sanitizePrompt(prompt string) (string, error) {
 
 	original := prompt
 	for _, re := range injectionPatterns {
-		prompt = re.ReplaceAllString(prompt, "[REMOVED]")
+		prompt = re.ReplaceAllString(prompt, "[REMOVED] ")
 	}
 
-	// Se depois de remover tudo não sobrou nada útil, bloqueia com erro
-	stripped := strings.TrimSpace(prompt)
-	if stripped == "" || stripped == "[REMOVED]" {
+	// Colapsa espaços/tabs duplicados (preserva newlines)
+	spaceRun := regexp.MustCompile(`[ \t]+`)
+	prompt = spaceRun.ReplaceAllString(prompt, " ")
+	prompt = strings.TrimSpace(prompt)
+
+	// Se depois de remover tudo não sobrou nada útil, bloqueia com erro.
+	// "[REMOVED]" sozinho ou "[REMOVED] [REMOVED]" indicam
+	// que o prompt inteiro era composto de padrões de injeção.
+	allRemoved := regexp.MustCompile(`^(\[REMOVED\]([ \t]+)?)+$`)
+	if prompt == "" || allRemoved.MatchString(prompt) {
 		return "", errors.New("prompt customizado bloqueado: continha apenas padrões de injeção")
 	}
 

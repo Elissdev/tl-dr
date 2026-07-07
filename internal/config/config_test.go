@@ -256,7 +256,7 @@ func TestCheckEnvPermissions(t *testing.T) {
 		stderr := captureStderr(t, func() {
 			checkEnvPermissions()
 		})
-		if !strings.Contains(stderr, "AVISO") {
+		if !strings.Contains(stderr, "WARNING") {
 			t.Errorf("0644 deveria emitir warning, got: %q", stderr)
 		}
 		if !strings.Contains(stderr, "600") {

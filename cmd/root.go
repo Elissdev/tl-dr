@@ -136,7 +136,10 @@ Exemplos de uso:
 			// Limpa a chave de API da Config da memória imediatamente — o Client
 			// já possui sua própria cópia interna (em []byte) e
 			// não precisa mais da string original. A string cfg.APIKey
-			// é zerada via secrets.ZeroString antes de ser substituída.
+			// é substituída por "" e o []byte original é zerado via ProtectedAPIKey.Clear().
+			// ATENÇÃO: Chamamos cfg.Clear() imediatamente (sem defer) porque o
+			// Client já copiou a chave. A limpeza do Client é feita via defer s.Clear()
+			// para garantir que a chave seja zerada mesmo em caso de pânico.
 			cfg.Clear()
 
 			// Garante que o Client também zere sua cópia da chave em []byte
@@ -453,19 +456,18 @@ func sanitizeOutput(s string) string {
 					i--
 				default:
 					// ESC seguido de byte não C1 conhecido
+					// ATENÇÃO: utf8Remaining é irrelevante aqui pois ESC (0x1b)
+					// nunca faz parte de uma sequência UTF-8 válida — ele sempre
+					// interrompe qualquer sequência multi-byte em andamento.
+					// Portanto, bytes >= 0x80 após ESC nunca são continuation
+					// bytes UTF-8 legítimos e devem ser pulados.
 					if c2 >= 0x80 {
-						// Se for continuacão UTF-8, deixa passar
-						if utf8Remaining > 0 {
-							result.WriteByte(0x1b)
-							result.WriteByte(c2)
-						} else {
-							// Pula o resto da sequência
+						// Pula todos os bytes de continuação
+						i++
+						for i < len(s) && s[i] >= 0x80 && s[i] < 0xC0 {
 							i++
-							for i < len(s) && s[i] >= 0x80 && s[i] < 0xC0 {
-								i++
-							}
-							i--
 						}
+						i--
 					} else {
 						i--
 					}

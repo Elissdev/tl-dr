@@ -473,7 +473,7 @@ func TestClientClear(t *testing.T) {
 		}
 	})
 
-	t.Run("Summarize após Clear panica", func(t *testing.T) {
+	t.Run("Summarize após Clear retorna erro", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{}`)
@@ -483,13 +483,13 @@ func TestClientClear(t *testing.T) {
 		s := newTestClient(t, "sk-test", server.URL, "test-model", 5*time.Second)
 		s.Clear()
 
-		defer func() {
-			if r := recover(); r == nil {
-				t.Error("Summarize() após Clear() deveria panicar, mas não panico")
-			}
-		}()
-
-		_, _ = s.Summarize(context.Background(), "Sistema", "Texto")
+		_, err := s.Summarize(context.Background(), "Sistema", "Texto")
+		if err == nil {
+			t.Error("Summarize() após Clear() deveria retornar erro, mas retornou nil")
+		}
+		if !strings.Contains(err.Error(), "usado após Clear") {
+			t.Errorf("erro = %q, want contendo 'usado após Clear'", err.Error())
+		}
 	})
 
 	t.Run("Clear duplo não panica", func(t *testing.T) {

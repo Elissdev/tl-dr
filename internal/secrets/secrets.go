@@ -57,10 +57,16 @@ func (p *ProtectedAPIKey) Get() string {
 	return string(p.data)
 }
 
-// Bytes retorna uma referência direta ao slice interno, para uso em contextos
-// onde o caller pode gerenciar o ciclo de vida da memória.
+// Bytes retorna uma cópia do slice interno da chave.
+// O caller pode modificar ou zerar a cópia sem afetar o estado interno
+// do ProtectedAPIKey. Retorna nil se o wrapper já foi limpo via Clear().
 func (p *ProtectedAPIKey) Bytes() []byte {
-	return p.data
+	if p == nil || p.data == nil {
+		return nil
+	}
+	b := make([]byte, len(p.data))
+	copy(b, p.data)
+	return b
 }
 
 // Clear zera os bytes da chave na memória e invalida o wrapper.

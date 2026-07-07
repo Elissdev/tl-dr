@@ -13,7 +13,8 @@ import (
 
 // envPermsWarn é o prefixo para o aviso de permissões do .env.
 // Usar stderr evita misturar com a saída do resumo no stdout.
-const envPermsWarn = "⚠️  AVISO: "
+// Mantido em inglês por ser um aviso de segurança universal.
+const envPermsWarn = "⚠️  WARNING: "
 
 // checkEnvPermissions verifica as permissões do arquivo .env e emite
 // um aviso no stderr se estiver legível para outros usuários.
@@ -131,8 +132,9 @@ func (c *Config) Clear() {
 	c.APIKey = ""
 }
 
-// APIKeyBytes retorna a chave de API como []byte para uso em contextos
-// onde o caller pode gerenciar o ciclo de vida da memória.
+// APIKeyBytes retorna uma cópia da chave de API como []byte para uso em
+// contextos onde o caller pode gerenciar o ciclo de vida da memória.
+// O caller pode zerar a cópia sem afetar o estado interno.
 // Retorna nil se o ProtectedAPIKey não estiver mais disponível.
 func (c *Config) APIKeyBytes() []byte {
 	if c.protectedKey == nil {

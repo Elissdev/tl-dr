@@ -85,7 +85,7 @@ func TestProtectedAPIKeyBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("Bytes retorna referência direta ao slice", func(t *testing.T) {
+	t.Run("Bytes retorna cópia do slice interno", func(t *testing.T) {
 		b := key.Bytes()
 		if b == nil {
 			t.Fatal("Bytes() = nil, want non-nil")
@@ -94,10 +94,10 @@ func TestProtectedAPIKeyBytes(t *testing.T) {
 			t.Errorf("Bytes() = %q, want %q", string(b), "sk-test-bytes")
 		}
 
-		// Modificar o slice retornado deve afetar o original (é referência)
+		// Modificar o slice retornado NÃO deve afetar o original (é cópia)
 		b[0] = 'X'
-		if key.Get() != "Xk-test-bytes" {
-			t.Errorf("Get() após modificar Bytes() = %q, want %q", key.Get(), "Xk-test-bytes")
+		if key.Get() != "sk-test-bytes" {
+			t.Errorf("Get() após modificar Bytes() = %q, want %q", key.Get(), "sk-test-bytes")
 		}
 	})
 

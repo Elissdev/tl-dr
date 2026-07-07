@@ -102,7 +102,7 @@ func New(cfg Config) (*Client, error) {
 // Clear zera a chave de API da memória do Client.
 // Deve ser chamado assim que o Client não for mais necessário.
 // Após Clear, o Client não deve mais ser usado para chamadas de API
-// — qualquer tentativa resultará em panic.
+// — qualquer tentativa resultará em erro.
 func (s *Client) Clear() {
 	for i := range s.apiKey {
 		s.apiKey[i] = 0
@@ -114,10 +114,10 @@ func (s *Client) Clear() {
 // Summarize envia um prompt e texto para a API e retorna o resumo.
 // O prompt é enviado como mensagem de sistema (reduz risco de injeção de prompt)
 // e o texto do usuário como mensagem de usuário.
-// Panica se o Client já tiver sido limpo via Clear().
+// Retorna erro se o Client já tiver sido limpo via Clear().
 func (s *Client) Summarize(ctx context.Context, systemPrompt, userText string) (string, error) {
 	if s.cleared {
-		panic("summarizer: Client usado após Clear()")
+		return "", errors.New("summarizer: Client usado após Clear()")
 	}
 	chat, err := s.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{

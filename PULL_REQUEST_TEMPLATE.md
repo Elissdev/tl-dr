@@ -1,6 +1,6 @@
-# Pull Request #14 — Conclusão das 11 Code Reviews
+# Pull Request #15 — Code Review: Fase 4 — Integração com API
 
-> **Branch:** `feat/fase-3-input-refactor`
+> **Branch:** `feat/fase-4-api-integration`
 > **Base:** `main`
 > **Status:** 🟢 Pronto para merge
 
@@ -8,56 +8,51 @@
 
 ## 📋 Resumo
 
-Esta PR consolida **11 rodadas de code review** sobre a Fase 3, resultando em melhorias de **segurança**, **robustez**, **testabilidade** e **qualidade de código** no tl;dr. As principais áreas afetadas são: proteção contra prompt injection, sanitização de saída, redação estendida de credenciais, timeout configurável em stdin, eliminação de TOCTOU, e refatoração do comando raiz para testabilidade isolada.
+Esta PR consolida as **recomendações do code review** sobre a Fase 4 (integração com API OpenAI via Apiário), resultando em melhorias de **segurança**, **robustez**, **performance** e **qualidade de código** no tl;dr. As principais áreas afetadas são: proteção contra prompt injection em prompts customizados, sanitização de bytes C1, suporte a `TLDR_API_KEY_FILE`, limpeza segura de memória, verificação de permissões do `.env`, e tratamento thread-safe do Client.
 
 ---
 
-## 🔴 Breaking Changes na API Pública
+## 🔴 Breaking Changes
 
-### `summarizer.New()` agora retorna `(*Client, error)`
+### `summarizer.Client.Summarize()` — `panic` substituído por `error`
 
 ```go
 // Antes
-s := summarizer.New(cfg)    // *Summarizer (nunca nil)
+s.Summarize(ctx, prompt, text) // panic se chamado após Clear()
 
 // Depois
-s, err := summarizer.New(cfg) // (*Client, error)
-if err != nil { /* APIKey/Model/BaseURL vazio */ }
+s.Summarize(ctx, prompt, text) // retorna error se chamado após Clear()
 ```
 
-### Struct `Summarizer` renomeada para `Client`
+**Ação:** Se seu código capturava o panic com `recover`, agora deve tratar o erro normalmente.
 
-Qualquer referência direta a `summarizer.Summarizer` quebra.
+### `summarizer.Client.apiKey` — tipo alterado de `string` para `[]byte`
 
-### Constantes de exit code renomeadas
+- Campo não exportado (afeta apenas código interno)
+- Função `redactCredentials` teve assinatura atualizada: `(s string, apiKey []byte)`
+- Função `classifyAPIError` agora recebe `apiKey []byte` como parâmetro
 
-| Antes | Depois |
-|-------|--------|
-| `ExitSuccess` | `ExitOK` |
-| `ExitGenericError` | `ExitInternal` |
-| `ExitAPIError` | `ExitAPI` |
-| `ExitArgumentError` | `ExitArgs` |
-| *(nova)* | `ExitTimeout = 4` |
+### `sanitizePrompt()` — flag `--prompt` agora sanitizada
 
-### Renomeações no pacote `input`
+- **Antes:** Prompt customizado passava diretamente para a API
+- **Depois:** Padrões de injeção são substituídos por `[REMOVED]`; prompt 100% injetivo causa erro
+- **Mitigação:** Regex calibrada; `"now"` não é mais gatilho isolado (evita falso positivo)
 
-| Antes | Depois |
-|-------|--------|
-| `input.ReadFile()` | `input.ReadFromFile()` |
-| `input.ReadStdin()` | `input.ReadFromStdin()` |
-| `input.IsStdinAvailable()` | `input.IsStdinRedirected()` |
+### `config.Load()` — novo side effect em stderr
 
----
+- **Antes:** `Load()` não escrevia em stderr
+- **Depois:** Se `.env` tiver permissões >0600, emite warning de segurança no stderr
+- **Mitigação:** Use `chmod 600 .env` para silenciar
 
-## 🟠 Breaking Changes Comportamentais
+### `secrets.LoadAPIKey()` — mensagem de erro alterada
 
-- **`ReadFromStdin()` rejeita stdin vazio**: antes retornava `("", nil)`, agora retorna erro
-- **`ReadFromStdin()` rejeita terminal interativo**: se stdin for um terminal sem pipe/redirect, erro imediato
-- **Timeout de 30s no stdin**: se o pipe não enviar dados em 30s, a leitura falha com erro de timeout
-- **`buildPrompt()` agora inclui prefixo de segurança** imutável contra prompt injection, antes de qualquer prompt customizado ou padrão
-- **Saída sanitizada por padrão**: ANSI escape codes (CSI, OSC, DCS, SOS, PM, APC) são removidos automaticamente. Use `--no-sanitize` para desabilitar
-- **`cfg.Clear()` movido para `defer`**: a chave de API é zerada apenas no retorno do comando
-- **Modelo default hardcoded**: se `TLDR_DEFAULT_MODEL` não for definido, usa `deepseek/deepseek-v4-flash`
+- **Antes:** `"TLDR_API_KEY não definida"`
+- **Depois:** `"TLDR_API_KEY não definida (defina a variável ou TLDR_API_KEY_FILE)"`
+
+### `config.Clear()` — semântica reforçada
+
+- **Antes:** Usar struct após Clear() era possível (APIKey retornava "")
+- **Depois:** Contrato explicita que struct não deve mais ser usada após Clear()
 
 ---
 
@@ -67,32 +62,29 @@ Qualquer referência direta a `summarizer.Summarizer` quebra.
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| 🔒 **Safety prefix anti-prompt injection** | Prefixo imutável em pt (`SafetyPrefixPT`) e en (`SafetyPrefixEN`) inserido antes de todo prompt |
-| 🧹 **`sanitizeOutput()`** | Remove CSI, OSC, DCS, SOS, PM, APC sequences e caracteres de controle (exceto `\t`, `\n`, `\r`) |
-| 🚫 **Flag `--no-sanitize`** | Desabilita a sanitização de escape codes (útil se o terminal já processa cores) |
-| 🕵️ **Redação estendida de credenciais** | Agora cobre: OpenAI (`sk-`, `sk-proj-`), DeepSeek, Anthropic (`sk-ant-`), GitHub PAT (`ghp_`), JWT, `api_key=`, `token=`, fallback genérico 60+ chars |
-| 🔑 **Redação da própria chave** | A chave da API configurada no `Client` também é redigida em mensagens de erro |
-| 🔗 **`redactedError` preserva cadeia** | Erros redigidos preservam o erro original via `Unwrap()` para `errors.Is`/`errors.As` |
+| 🔑 **`TLDR_API_KEY_FILE`** | Ler chave de API de arquivo (fallback quando `TLDR_API_KEY` não definida) |
+| 🧪 **`secrets.ProtectedAPIKey.Bytes()`** | Retorna cópia defensiva da chave como `[]byte` (mutação não afeta original) |
+| 🔍 **`config.Config.APIKeyBytes()`** | Acessa chave como `[]byte` via Config para gerenciamento de memória |
+| 🧹 **`summarizer.Client.Clear()`** | Zera a chave de API da memória do Client (thread-safe com mutex) |
+| 🛡️ **`sanitizePrompt()`** | Sanitização de prompts customizados contra injeção com pré-filtro de keywords |
+| 🌐 **Bytes C1 (0x80-0x9F)** | Tratamento de controles C1 de 8-bit em `sanitizeOutput()` com estado UTF-8 |
+| ⚠️ **`checkEnvPermissions()`** | Aviso de segurança se `.env` tiver permissões muito permissivas |
 
-### CLI
+### Performance
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| 🏷️ **Flag `--version` / `-v`** | Exibe versão do binário (injetada via ldflags no `Makefile`) |
-| ⏱️ **Flag `--timeout` / `-t`** | Timeout customizável via CLI (sobrescreve `TLDR_TIMEOUT`) |
-| 🌐 **Feedback visual no stderr** | Exibe idioma e modelo usados, além de "📝 Resumindo..." |
-| ⚠️ **Truncamento parcial** | Se a resposta for truncada (`finish_reason=length`), exibe o conteúdo parcial + aviso no stderr |
+| ⚡ **Pré-filtro de keywords** | `sanitizePrompt()` verifica keywords primeiro; se ausentes, pula scan com regexes |
+| 🧩 **`injectionKeywords`** | Lista de 15 palavras-chave para fast-path: `ignore`, `reveal`, `show`, `system`, `user`, `assistant`, etc. |
 
 ### Engine
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| 📦 **`ErrTruncated`** | Sentinel error para respostas truncadas — retorna conteúdo parcial + erro |
-| ⏰ **`ErrTimeout`** | Sentinel error para timeout — detectável via `errors.Is(err, summarizer.ErrTimeout)` |
-| 🗺️ **`getLocale()`** | Sistema de localização com `localeConfig` (SafetyPrefix + DefaultPrompt + RespondIn) |
-| ➕ **`firstNonEmpty()`** | Helper para resolver precedência: flag > env > default |
-| 🧪 **`newRootCommand()`** | Comando raiz agora é construído por função (sem estado global/`init()`), permitindo testes isolados |
-| 🧪 **`ReadFromStdinWithTimeout()`** | Versão testável da leitura de stdin com timeout customizável |
+| 🔒 **`Client.mu sync.Mutex`** | Proteção thread-safe contra race condition entre `Summarize()` e `Clear()` |
+| 📋 **`Client.cleared`** | Flag booleana para detectar uso após limpeza (em vez de panic) |
+| 🧪 **`allRemoved` regex** | Detecta se prompt contém apenas marcações `[REMOVED]` (bloqueio total) |
+| 🧪 **`spaceRun` regex** | Colapsa espaços/tabs duplicados (preserva newlines) no resultado sanitizado |
 
 ---
 
@@ -102,71 +94,73 @@ Qualquer referência direta a `summarizer.Summarizer` quebra.
 
 | Issue | Solução |
 |-------|---------|
-| **TOCTOU em `ReadFromFile`** | `os.Open()` primeiro, `f.Stat()` depois, `io.ReadAll(limitReader)` — eliminado race entre Stat e ReadFile |
-| **TOCTOU em `ReadFromStdin`** | Verificação de terminal movida para dentro da função (antes era externa) |
-| **Goroutine leak em timeout** | Leitura de stdin em goroutine com `context.WithTimeout` + canal com buffer 1 |
-| **`unsafe` removido de `secrets`** | Uso de `unsafe.Pointer` para zerar buffer de string não é confiável em Go moderno; agora apenas copia para `[]byte` controlado |
-| **Validação de URL** | Agora exige `http://` ou `https://` no scheme (antes aceitava qualquer URI) |
-| **`summarizer.New()` valida campos** | `APIKey`, `Model` e `BaseURL` vazios retornam erro (antes aceitavam silenciosamente) |
-| **Content vazio com `finish_reason=stop`** | Novo caso de erro detectado e reportado |
+| **Prompt injection via `--prompt`** | `sanitizePrompt()` com 4 regexes de injection + pré-filtro de keywords |
+| **Vazamento de bytes C1 na saída** | `sanitizeOutput()` rastreia estado UTF-8 (`utf8Remaining`) para distinguir continuation bytes legítimos de controles C1 |
+| **Chave de API no arquivo** | `LoadAPIKey()` lê de `TLDR_API_KEY_FILE` (com `filepath.Clean` para G304), lê arquivo, remove trailing newline/CR |
+| **Permissões do .env** | `checkEnvPermissions()` verifica bits `0o040` (group) e `0o004` (others); recomenda `chmod 600` |
+| **`Summarize()` pós-Clear** | Retorna erro em vez de panic — thread-safe com mutex |
+| **`cfg.Clear()` imediato** | `cfg.Clear()` agora é chamado imediatamente (sem defer); `s.Clear()` mantém `defer` |
+| **`redactCredentials` com `[]byte`** | Tipo alterado de `string` para `[]byte` — permite gerenciamento de memória |
+| **`classifyAPIError` recebe `[]byte`** | Cópia defensiva da chave antes do unlock para evitar race |
+
+### Falsos positivos eliminados
+
+| Palavra | Motivo | Ação |
+|---------|--------|------|
+| `now` | Aparece em prompts legítimos ("Resuma agora", "Agora explique") | Removido do `injectionPatterns` |
+| `system` | "O sistema está rodando" é legítimo | Mantido como keyword, mas sem pattern que case sozinho |
 
 ### Padrões de código
 
 | Melhoria | Detalhe |
 |----------|---------|
-| **Sem estado global/`init()`** | `newRootCommand()` retorna um comando novo a cada chamada, flags via ponteiros |
-| **Variáveis globais eliminadas** | `lang`, `model`, `customPromptFlag` removidas — agora são ponteiros locais do `cobra.Command` |
-| **`getEnv` renomeado para `envOr`** | Nome mais semântico |
-| **`SupportedLocales` como mapa** | Adicionar novo idioma = adicionar entrada no mapa |
-| **`apiKeyRedactors` como slice de regexes** | Em vez de uma regex gigante, lista de patterns específicos e documentados |
-| **`newTestClient()` helper** | Elimina repetição de `summarizer.New` + `t.Fatalf` nos testes |
+| **`sanitizePrompt()` separada** | Função isolada e testável (18 casos de teste) |
+| **`sanitizeOutput()` reescrita** | Código reestruturado com estado UTF-8, tratamento de C1 8-bit |
+| **`ProtectedAPIKey.Bytes()` cópia defensiva** | `make([]byte, len)` + `copy()` — mutação externa não afeta interno |
+| **`Config.APIKeyBytes()` nil-safe** | Retorna nil se `protectedKey` for nil |
+| **`CheckEnvPermissions` testável** | `captureStderr()` helper para verificar warnings |
 
 ---
 
 ## 🧪 Testes
 
-### Testes de unidade adicionados
+### Testes de unidade adicionados/modificados (+261 linhas)
 
 | Teste | O que cobre |
 |-------|-------------|
-| `TestBuildPrompt` | Prefixo de segurança + sufixo correto para en, pt, pt-br, es |
-| `TestBuildPromptSafetyPrefixAlwaysPresent` | Todas as combinações de idioma sempre incluem safety prefix |
-| `TestSanitizeOutput` | CSI, OSC, DCS, SOS, PM, APC, newlines, tabs, CR, string vazia |
-| `TestSanitizeOutputEdgeCases` | ESC isolado, CSI/OSC incompleto, ESC + controle, múltiplos ESC, unicode |
-| `TestGetLocale` | pt-br, pt, en, idioma desconhecido, não quebra existentes |
-| `TestFirstNonEmpty` | Vários casos: preenchido, vazios, slice vazio |
-| `TestExecute` | langPattern válido/inválido, `--no-sanitize`, sem API key, env vars, idioma inválido, arquivo inexistente |
-| `TestNew` (summarizer) | Config válida, API key vazia, modelo vazio, base URL vazia, timeout zero |
-| `TestSummarize` | `finish_reason=stop` vazio, erro 400 |
-| `TestClassifyAPIErrorSanitization` | Chave sk-, sk-proj-, api_key=, token=, própria chave, timeout, `errors.Is(ErrTimeout)` |
-| `TestRedactCredentials` | Redige chave configurada, apiKey vazia, string vazia |
-| Stdin timeout | `ReadFromStdinWithTimeout` com pipe lento |
-| `TestIsStdinRedirected` | Pipe retorna true (determinístico) |
+| `TestSanitizePrompt` | 18 casos: normal, vazio, injeção total/parcial, `im_start`, `system`, `user`, `assistant`, pré-filtro com/sem keyword |
+| `TestSanitizeOutputC1Bytes` | 15 casos: CSI 8-bit (0x9B), OSC (0x9D), DCS (0x90), SOS (0x98), PM (0x9E), APC (0x9F), ST (0x9C), C1 genérico, C1 + ESC misturados, UTF-8 válido (0x80, 0xA0-0xBF, 3-byte), lone continuation byte |
+| `TestAPIKeyBytes` | Slice correto, nil após Clear |
+| `TestProtectedAPIKeyBytes` | Retorna cópia (mutação não afeta original), nil após Clear |
+| `TestCheckEnvPermissions` | Sem .env (sem warning), 0600 (sem warning), 0644 (com warning) |
+| `TestClientClear` | Clear zera apiKey e marca `cleared`, Summarize após Clear retorna erro, double Clear seguro |
+| `TestRedactCredentials` | Atualizado: `[]byte`, slice vazio não quebra |
+
+### Melhorias em testes existentes
+
+| Teste | Mudança |
+|-------|---------|
+| `TestClassifyAPIErrorSanitization` | Agora passa `s.apiKey` como `[]byte` |
+| `TestRedactCredentials` | Assinatura atualizada para `[]byte` |
+| `TestNew` (summarizer) | Comparação de `s.apiKey` usa `string(s.apiKey)` |
 
 ---
 
-## 📦 Arquivos Modificados (18 arquivos)
+## 📦 Arquivos Modificados (10 arquivos)
 
 | Arquivo | Mudanças |
 |---------|----------|
-| `.github/workflows/ci.yml` | ➕ Race detector + gosec security scan |
-| `CHANGELOG.md` | 📝 Documentação das mudanças |
-| `Makefile` | 🔧 Versão via ldflags |
+| `.env.example` | ➕ Documentação de `TLDR_API_KEY_FILE` |
+| `CHANGELOG.md` | 📝 Seção PR #15 detalhada |
 | `PULL_REQUEST_TEMPLATE.md` | 📝 Este documento |
-| `README.md` | 📝 Flags `--no-sanitize`, `--timeout`, `--version`; exit codes; env vars |
-| `cmd/errors.go` | 🔴 Exit codes renomeados + `ExitTimeout` |
-| `cmd/errors_test.go` | 🧪 Atualizado para novos exit codes |
-| `cmd/root.go` | 🔄 Refatoração completa (84% rewrite) |
-| `cmd/root_test.go` | 🧪 +436 linhas de novos testes |
-| `go.mod` | ➕ godotenv como dependência direta |
-| `internal/config/config.go` | 🔧 `envOr()`, validação de scheme http/https |
-| `internal/input/input.go` | 🔧 TOCTOU, timeout, ~ expansion, `ReadFromStdinWithTimeout` |
-| `internal/input/input_test.go` | 🧪 Stdin timeout, `IsStdinRedirected` |
-| `internal/integration/summarizer_test.go` | 🧪 `//go:build integration`, `summarizer.New()` error |
-| `internal/secrets/secrets.go` | 🔒 `unsafe` removido |
-| `internal/summarizer/summarizer.go` | 🔴 `Client` + `(*Client, error)`, `ErrTruncated`, `ErrTimeout`, redação |
-| `internal/summarizer/summarizer_test.go` | 🧪 `newTestClient`, novos testes |
-| `.gitignore` | 🔧 Ignorar `teste.txt`, `me explique...` |
+| `cmd/root.go` | 🔄 `sanitizePrompt()` integrado ao fluxo, `cfg.Clear()` imediato + `defer s.Clear()`, comentários atualizados |
+| `cmd/root_test.go` | 🧪 +231 linhas: `TestSanitizePrompt`, `TestSanitizeOutputC1Bytes` |
+| `internal/config/config.go` | ➕ `checkEnvPermissions()`, `APIKeyBytes()`, warning no stderr |
+| `internal/config/config_test.go` | 🧪 +156 linhas: `TestAPIKeyBytes`, `TestCheckEnvPermissions` |
+| `internal/secrets/secrets.go` | ➕ `LoadAPIKey()` lê `TLDR_API_KEY_FILE`, `Bytes()` método, `filepath.Clean` |
+| `internal/secrets/secrets_test.go` | 🧪 `TestProtectedAPIKeyBytes` |
+| `internal/summarizer/summarizer.go` | 🔄 `apiKey` → `[]byte`, mutex thread-safe, `Clear()`, `classifyAPIError` recebe `[]byte` |
+| `internal/summarizer/summarizer_test.go` | 🧪 `TestClientClear`, assinaturas atualizadas |
 
 ---
 
@@ -176,18 +170,20 @@ Qualquer referência direta a `summarizer.Summarizer` quebra.
 - [ ] Testes com race detector (`make test-race`)
 - [ ] Lint passa (`make lint`)
 - [ ] Build passa (`make build`)
-- [ ] `summarizer.New()` trata erro de retorno em todos os callers
-- [ ] Prefixo de segurança contra prompt injection está presente em todos os prompts
-- [ ] Saída é sanitizada por padrão (ANSI removido)
-- [ ] `--no-sanitize` desabilita a sanitização
-- [ ] Timeout no stdin funciona (pipe travado não trava o CLI)
-- [ ] Redação de credenciais cobre todos os formatos conhecidos
-- [ ] `errors.Is(err, summarizer.ErrTimeout)` funciona
-- [ ] `errors.Is(err, summarizer.ErrTruncated)` com conteúdo parcial
-- [ ] TOCTOU eliminado em `ReadFromFile` e `ReadFromStdin`
-- [ ] `cfg.Clear()` via `defer` (não antes)
-- [ ] `--version` exibe a versão correta
-- [ ] `--timeout` sobrescreve `TLDR_TIMEOUT`
+- [ ] `TLDR_API_KEY_FILE` funciona (arquivo com permissão restritiva)
+- [ ] `ProtectedAPIKey.Bytes()` retorna cópia (mutação externa não afeta interno)
+- [ ] `Config.APIKeyBytes()` retorna nil após Clear
+- [ ] `sanitizePrompt()` bloqueia prompt 100% injetivo com erro
+- [ ] `sanitizePrompt()` preserva prompts normais (sem falsos positivos)
+- [ ] `sanitizeOutput()` trata bytes C1 8-bit (0x80-0x9F) corretamente
+- [ ] `sanitizeOutput()` preserva UTF-8 válido com continuation bytes
+- [ ] `Summarize()` após Clear retorna erro (não panic)
+- [ ] `Clear()` duplo não causa panic
+- [ ] Race condition entre Summarize() e Clear() protegida por mutex
+- [ ] `cfg.Clear()` chamado imediatamente (não defer) em root.go
+- [ ] `s.Clear()` chamado via defer em root.go
+- [ ] `.env` com permissão 0644 emite warning (0600 não)
+- [ ] `checkEnvPermissions()` não quebra se .env não existir
 - [ ] CHANGELOG e PULL_REQUEST_TEMPLATE atualizados
 
 ---

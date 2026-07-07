@@ -5,16 +5,17 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Elissdev/tl-dr/internal/secrets"
 	"github.com/joho/godotenv"
 )
 
-// envPermsWarn é o prefixo para o aviso de permissões de arquivos.
+// filePermsWarn é o prefixo para o aviso de permissões de arquivos.
 // Usar stderr evita misturar com a saída do resumo no stdout.
 // Mantido em inglês por ser um aviso de segurança universal.
-const envPermsWarn = "⚠️  WARNING: "
+const filePermsWarn = "⚠️  WARNING: "
 
 // checkFilePermissions verifica as permissões do arquivo no caminho
 // informado e emite um aviso no stderr se estiver legível para outros
@@ -37,7 +38,7 @@ func checkFilePermissions(path string) {
 			// diretório pai, broken symlink, filesystem offline). Avisamos no
 			// stderr para debug, sem interromper o fluxo.
 			msg := fmt.Sprintf("%s%s: não foi possível verificar permissões: %v\n",
-				envPermsWarn, path, err)
+				filePermsWarn, path, err)
 			_, _ = os.Stderr.WriteString(msg)
 		}
 		return
@@ -65,8 +66,9 @@ func checkFilePermissions(path string) {
 	}
 
 	if len(warnings) > 0 {
+		details := strings.Join(warnings, " e ")
 		msg := fmt.Sprintf("%s%s tem permissões %04o — %s. Recomendado: chmod 600\n",
-			envPermsWarn, path, perm, warnings[0])
+			filePermsWarn, path, perm, details)
 		_, _ = os.Stderr.WriteString(msg)
 	}
 }

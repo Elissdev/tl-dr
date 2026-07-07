@@ -171,8 +171,8 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err := os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			os.Rename(".env", ".env.bak")
-			defer os.Rename(".env.bak", ".env")
+			_ = os.Rename(".env", ".env.bak")
+			defer func() { _ = os.Rename(".env.bak", ".env") }()
 		}
 
 		// Captura stderr
@@ -195,11 +195,11 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err = os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			os.Rename(".env", ".env.bak")
-			defer os.Rename(".env.bak", ".env")
+			_ = os.Rename(".env", ".env.bak")
+			defer func() { _ = os.Rename(".env.bak", ".env") }()
 		}
-		os.Rename(".env_test_perms", ".env")
-		defer os.Rename(".env", ".env_test_perms")
+		_ = os.Rename(".env_test_perms", ".env")
+		defer func() { _ = os.Rename(".env", ".env_test_perms") }()
 
 		stderr := captureStderr(t, func() {
 			checkEnvPermissions()
@@ -219,11 +219,11 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err = os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			os.Rename(".env", ".env.bak")
-			defer os.Rename(".env.bak", ".env")
+			_ = os.Rename(".env", ".env.bak")
+			defer func() { _ = os.Rename(".env.bak", ".env") }()
 		}
-		os.Rename(".env_test_perms", ".env")
-		defer os.Rename(".env", ".env_test_perms")
+		_ = os.Rename(".env_test_perms", ".env")
+		defer func() { _ = os.Rename(".env", ".env_test_perms") }()
 
 		stderr := captureStderr(t, func() {
 			checkEnvPermissions()

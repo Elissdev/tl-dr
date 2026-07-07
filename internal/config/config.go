@@ -42,7 +42,8 @@ func checkEnvPermissions() {
 	var warnings []string
 	if perm&othersRead != 0 {
 		warnings = append(warnings, "legível para outros usuários")
-	} else if perm&groupRead != 0 {
+	}
+	if perm&groupRead != 0 {
 		warnings = append(warnings, "legível para o grupo")
 	}
 

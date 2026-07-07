@@ -371,7 +371,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	s := newTestClient(t, "sk-my-secret-key-12345", "https://api.example.com/v1", "test-model", 5*time.Second)
 
 	t.Run("chave sk- no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("timeout with key sk-abcdefghijklmnopqrstuvwxyz123456"))
+		err := s.classifyAPIError(fmt.Errorf("timeout with key sk-abcdefghijklmnopqrstuvwxyz123456"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-abcdefghijklmnopqrstuvwxyz") {
 			t.Errorf("chave sk- não deveria aparecer: %q", err.Error())
 		}
@@ -381,21 +381,21 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	})
 
 	t.Run("chave sk-proj- no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("error: sk-proj-abcdefghijklmnopqrstuvwxyz123456"))
+		err := s.classifyAPIError(fmt.Errorf("error: sk-proj-abcdefghijklmnopqrstuvwxyz123456"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-proj-") {
 			t.Errorf("chave sk-proj- não deveria aparecer: %q", err.Error())
 		}
 	})
 
 	t.Run("api_key= no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("invalid api_key=sk-test-key-here-12345"))
+		err := s.classifyAPIError(fmt.Errorf("invalid api_key=sk-test-key-here-12345"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-test-key") {
 			t.Errorf("api_key não deveria aparecer: %q", err.Error())
 		}
 	})
 
 	t.Run("token= no erro", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("invalid token=ghp_12345678901234567890"))
+		err := s.classifyAPIError(fmt.Errorf("invalid token=ghp_12345678901234567890"), s.apiKey)
 		if strings.Contains(err.Error(), "ghp_123456") {
 			t.Errorf("token não deveria aparecer: %q", err.Error())
 		}
@@ -403,7 +403,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("chave da própria API no erro", func(t *testing.T) {
 		// A chave configurada no client é "sk-my-secret-key-12345"
-		err := s.classifyAPIError(fmt.Errorf("error: authentication failed for key 'sk-my-secret-key-12345'"))
+		err := s.classifyAPIError(fmt.Errorf("error: authentication failed for key 'sk-my-secret-key-12345'"), s.apiKey)
 		if strings.Contains(err.Error(), "sk-my-secret-key-12345") {
 			t.Errorf("chave configurada não deveria aparecer: %q", err.Error())
 		}
@@ -413,7 +413,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 	})
 
 	t.Run("erro de rede comum", func(t *testing.T) {
-		err := s.classifyAPIError(fmt.Errorf("connection refused"))
+		err := s.classifyAPIError(fmt.Errorf("connection refused"), s.apiKey)
 		if err == nil {
 			t.Fatal("classifyAPIError(nil-like) = nil, want erro")
 		}
@@ -424,7 +424,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("erro de timeout preserva cadeia via errors.Is", func(t *testing.T) {
 		original := fmt.Errorf("connection timeout: %w", context.DeadlineExceeded)
-		err := s.classifyAPIError(original)
+		err := s.classifyAPIError(original, s.apiKey)
 		// A mensagem exibida ao usuário (Error()) deve ser a versão tratada
 		if !strings.Contains(err.Error(), "tempo limite") {
 			t.Errorf("mensagem deveria conter 'tempo limite': %q", err.Error())
@@ -437,7 +437,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 	t.Run("ErrTimeout detectável via errors.Is", func(t *testing.T) {
 		original := fmt.Errorf("request timeout: %w", context.DeadlineExceeded)
-		err := s.classifyAPIError(original)
+		err := s.classifyAPIError(original, s.apiKey)
 		if !errors.Is(err, ErrTimeout) {
 			t.Error("errors.Is(err, ErrTimeout) = false, want true")
 		}

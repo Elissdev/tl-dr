@@ -199,8 +199,14 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err := os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			_ = os.Rename(".env", ".env.bak")
-			defer func() { _ = os.Rename(".env.bak", ".env") }()
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
 		}
 
 		// Captura stderr
@@ -223,11 +229,23 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err = os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			_ = os.Rename(".env", ".env.bak")
-			defer func() { _ = os.Rename(".env.bak", ".env") }()
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
 		}
-		_ = os.Rename(".env_test_perms", ".env")
-		defer func() { _ = os.Rename(".env", ".env_test_perms") }()
+		if err := os.Rename(".env_test_perms", ".env"); err != nil {
+			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
+		}
+		defer func() {
+			if err := os.Rename(".env", ".env_test_perms"); err != nil {
+				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
+			}
+		}()
 
 		stderr := captureStderr(t, func() {
 			checkEnvPermissions()
@@ -247,11 +265,23 @@ func TestCheckEnvPermissions(t *testing.T) {
 		_, err = os.ReadFile(".env")
 		hadEnv := err == nil
 		if hadEnv {
-			_ = os.Rename(".env", ".env.bak")
-			defer func() { _ = os.Rename(".env.bak", ".env") }()
+			if err := os.Rename(".env", ".env.bak"); err != nil {
+				t.Fatalf("erro ao renomear .env: %v", err)
+			}
+			defer func() {
+				if err := os.Rename(".env.bak", ".env"); err != nil {
+					t.Errorf("erro ao restaurar .env: %v", err)
+				}
+			}()
 		}
-		_ = os.Rename(".env_test_perms", ".env")
-		defer func() { _ = os.Rename(".env", ".env_test_perms") }()
+		if err := os.Rename(".env_test_perms", ".env"); err != nil {
+			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
+		}
+		defer func() {
+			if err := os.Rename(".env", ".env_test_perms"); err != nil {
+				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
+			}
+		}()
 
 		stderr := captureStderr(t, func() {
 			checkEnvPermissions()

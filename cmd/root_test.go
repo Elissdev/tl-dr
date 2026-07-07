@@ -351,6 +351,16 @@ func TestSanitizePrompt(t *testing.T) {
 			input: "Apenas um texto comum e inofensivo",
 			want:  "Apenas um texto comum e inofensivo",
 		},
+		{
+			name:  "keyword sem pattern: system sozinho",
+			input: "system running the code",
+			want:  "system running the code",
+		},
+		{
+			name:  "keyword sem pattern: show normal text",
+			input: "Show me the summary please",
+			want:  "Show me the summary please",
+		},
 	}
 
 	for _, tt := range tests {
@@ -432,6 +442,26 @@ func TestSanitizeOutputC1Bytes(t *testing.T) {
 			name:  "C1 + ESC misturados",
 			input: "\x9B31m\x1b[32mtexto\x1b[0m\x9B0m",
 			want:  "texto",
+		},
+		{
+			name:  "UTF-8 válido com continuation byte 0x80 (U+0080)",
+			input: "a\xC2\x80b",
+			want:  "a\xC2\x80b",
+		},
+		{
+			name:  "UTF-8 válido com continuation bytes 0xA0-0xBF (à, U+00E0)",
+			input: "\xC3\xA0rvore",
+			want:  "\xC3\xA0rvore",
+		},
+		{
+			name:  "UTF-8 3-byte com bytes na faixa C1 (U+0900)",
+			input: "\xE0\xA4\x80 texto",
+			want:  "\xE0\xA4\x80 texto",
+		},
+		{
+			name:  "lone continuation byte (0xA0) sem lead byte é descartado",
+			input: "a\xA0b",
+			want:  "ab",
 		},
 	}
 

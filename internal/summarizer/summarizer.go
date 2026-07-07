@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openai/openai-go"
@@ -55,6 +56,7 @@ type Config struct {
 
 // Client gerencia a comunicação com a API de sumarização.
 type Client struct {
+	mu     sync.Mutex
 	client *openai.Client
 	model  string
 	apiKey []byte  // armazenada como []byte para permitir limpeza na memória
@@ -64,8 +66,7 @@ type Client struct {
 // New cria um novo Client com a configuração fornecida.
 // Retorna erro se campos obrigatórios estiverem ausentes ou inválidos.
 // ATENÇÃO: A string cfg.APIKey é copiada internamente como []byte.
-// O caller deve zerar a string original via secrets.ZeroString (ou cfg.Clear())
-// após criar o Client.
+// O caller deve zerar a string original via cfg.Clear() após criar o Client.
 func New(cfg Config) (*Client, error) {
 	if cfg.APIKey == "" {
 		return nil, errors.New("API key é obrigatória")
@@ -104,6 +105,8 @@ func New(cfg Config) (*Client, error) {
 // Após Clear, o Client não deve mais ser usado para chamadas de API
 // — qualquer tentativa resultará em erro.
 func (s *Client) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i := range s.apiKey {
 		s.apiKey[i] = 0
 	}
@@ -115,10 +118,21 @@ func (s *Client) Clear() {
 // O prompt é enviado como mensagem de sistema (reduz risco de injeção de prompt)
 // e o texto do usuário como mensagem de usuário.
 // Retorna erro se o Client já tiver sido limpo via Clear().
+//
+// Thread-safe: copia a apiKey internamente para evitar race condition
+// com Clear() durante a chamada HTTP.
 func (s *Client) Summarize(ctx context.Context, systemPrompt, userText string) (string, error) {
+	s.mu.Lock()
 	if s.cleared {
+		s.mu.Unlock()
 		return "", errors.New("summarizer: Client usado após Clear()")
 	}
+	// Copia a chave para uso seguro em classifyAPIError após o unlock,
+	// evitando segurar o lock durante toda a chamada HTTP.
+	apiKeyCopy := make([]byte, len(s.apiKey))
+	copy(apiKeyCopy, s.apiKey)
+	s.mu.Unlock()
+
 	chat, err := s.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{
@@ -139,7 +153,7 @@ func (s *Client) Summarize(ctx context.Context, systemPrompt, userText string) (
 		Model: shared.ChatModel(s.model),
 	})
 	if err != nil {
-		return "", s.classifyAPIError(err)
+		return "", s.classifyAPIError(err, apiKeyCopy)
 	}
 
 	if len(chat.Choices) == 0 {
@@ -179,10 +193,13 @@ var ErrTimeout = errors.New("a requisição excedeu o tempo limite")
 // remove qualquer vazamento acidental de credenciais ou tokens.
 // Preserva a cadeia de erros original via redactedError para permitir
 // errors.Is/errors.As sem expor credenciais na mensagem.
-func (s *Client) classifyAPIError(err error) error {
+//
+// O parâmetro apiKey é uma cópia do slice interno, evitando race condition
+// com Clear() durante a classificação do erro.
+func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 	// Redige credenciais primeiro para evitar vazamento antes de qualquer
 	// classificação do erro.
-	redactedMsg := redactCredentials(err.Error(), s.apiKey)
+	redactedMsg := redactCredentials(err.Error(), apiKey)
 
 	// Detecta timeout antes de tentar interpretar como erro da API,
 	// pois timeouts podem manifestar-se como erros de rede antes mesmo
@@ -198,7 +215,7 @@ func (s *Client) classifyAPIError(err error) error {
 
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
-		msg := redactCredentials(apiErr.Error(), s.apiKey)
+		msg := redactCredentials(apiErr.Error(), apiKey)
 
 		switch apiErr.StatusCode {
 		case 401:

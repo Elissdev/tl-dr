@@ -318,29 +318,37 @@ func sanitizePrompt(prompt string) (string, error) {
 		}
 	}
 
+	removed := false
 	if hasKeyword {
 		for _, re := range injectionPatterns {
+			old := prompt
 			prompt = re.ReplaceAllString(prompt, "[REMOVED] ")
+			if prompt != old {
+				removed = true
+			}
+		}
+
+		// Colapsa espaços/tabs duplicados (preserva newlines) apenas
+		// quando houve remoção de padrões de injeção, evitando
+		// modificar prompts inocentes que contenham keywords.
+		if removed {
+			prompt = spaceRun.ReplaceAllString(prompt, " ")
+			prompt = strings.TrimSpace(prompt)
 		}
 	}
-
-	// Colapsa espaços/tabs duplicados (preserva newlines)
-	prompt = spaceRun.ReplaceAllString(prompt, " ")
-	prompt = strings.TrimSpace(prompt)
 
 	// Se depois de remover tudo não sobrou nada útil, bloqueia com erro.
 	// "[REMOVED]" sozinho ou "[REMOVED] [REMOVED]" indicam
 	// que o prompt inteiro era composto de padrões de injeção.
-	if prompt == "" || allRemoved.MatchString(prompt) {
+	if removed && (prompt == "" || allRemoved.MatchString(prompt)) {
 		return "", errors.New("prompt customizado bloqueado: continha apenas padrões de injeção")
 	}
 
-	// Se houve remoção parcial, retorna o prompt sanitizado
-	if prompt != original {
+	if removed {
 		return prompt, nil
 	}
 
-	return prompt, nil
+	return original, nil
 }
 
 // sanitizeOutput remove sequências de escape ANSI potencialmente maliciosas

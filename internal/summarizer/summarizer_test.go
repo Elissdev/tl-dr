@@ -504,7 +504,7 @@ func TestClassifyAPIErrorSanitization(t *testing.T) {
 
 func TestRedactCredentials(t *testing.T) {
 	t.Run("redige chave configurada", func(t *testing.T) {
-		result := redactCredentials("my-api-key-12345 is secret", "my-api-key-12345")
+		result := RedactCredentials("my-api-key-12345 is secret", "my-api-key-12345")
 		if strings.Contains(result, "my-api-key-12345") {
 			t.Errorf("chave não redigida: %q", result)
 		}
@@ -514,14 +514,14 @@ func TestRedactCredentials(t *testing.T) {
 	})
 
 	t.Run("apiKey vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("some error message", "")
+		result := RedactCredentials("some error message", "")
 		if result != "some error message" {
 			t.Errorf("resultado inesperado: %q", result)
 		}
 	})
 
 	t.Run("string vazia não quebra", func(t *testing.T) {
-		result := redactCredentials("", "sk-test-key")
+		result := RedactCredentials("", "sk-test-key")
 		if result != "" {
 			t.Errorf("resultado inesperado: %q", result)
 		}

@@ -3,6 +3,22 @@
 // Package integration_test contém testes de integração com a API real,
 // gravados e reproduzidos via go-vcr (cassete).
 //
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  AVISO DE SEGURANÇA — GRAVAÇÃO DE CASSETES                      ║
+// ╠══════════════════════════════════════════════════════════════════╣
+// ║  Ao gravar cassetes (TLDR_CASSETE_MODE=record), todo o request  ║
+// ║  HTTP é capturado, incluindo body com prompts e texto a serem   ║
+// ║  resumidos. NÃO utilize textos, prompts ou dados sensíveis      ║
+// ║  (senhas, tokens, dados pessoais, segredos de negócio) durante  ║
+// ║  a gravação, pois estes dados serão persistidos no YAML e       ║
+// ║  versionados no Git permanentemente.                            ║
+// ║                                                                ║
+// ║  O header Authorization é automaticamente redigido por um hook  ║
+// ║  BeforeSaveHook. O body também é sanitizado para padrões de     ║
+// ║  credenciais conhecidos, mas a melhor proteção é NÃO utilizar   ║
+// ║  dados sensíveis durante a gravação.                            ║
+// ╚══════════════════════════════════════════════════════════════════╝
+//
 // Modos de operação:
 //   - Replay (padrão): usa cassetes gravados. Funciona offline.
 //   - Record: TLDR_CASSETE_MODE=record + TLDR_API_KEY definida
@@ -26,6 +42,7 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 
 	"github.com/Elissdev/tl-dr/internal/summarizer"
@@ -61,6 +78,26 @@ func newRecorder(t *testing.T, cassetteName string) *recorder.Recorder {
 		if err != nil {
 			t.Fatalf("erro ao criar recorder (record): %v", err)
 		}
+
+		// SEGURANÇA: redige o header Authorization antes de persistir o cassete
+		// para evitar vazamento acidental da chave de API real no YAML versionado.
+		rec.AddHook(func(i *cassette.Interaction) error {
+			// Redige header Authorization para evitar vazamento da API key
+			if i.Request.Headers != nil {
+				i.Request.Headers.Del("Authorization")
+				i.Request.Headers.Add("Authorization", []string{"Bearer ***REDACTED***"})
+			}
+
+			// Redige patterns de credenciais no body da requisição
+			// (captura tokens, chaves de API, JWT etc. que possam estar
+			// presentes no prompt ou texto enviado)
+			if i.Request.Body != "" {
+				i.Request.Body = summarizer.RedactCredentials(i.Request.Body, "")
+			}
+
+			return nil
+		}, recorder.BeforeSaveHook)
+
 		t.Logf("📼 Gravando cassete: %s", cassettePath)
 	} else {
 		// Modo replay: reproduz do cassete existente

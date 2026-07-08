@@ -52,6 +52,13 @@ type Config struct {
 
 	// HTTPClient permite injetar um cliente HTTP customizado (ex: para testes com go-vcr).
 	// Se nil, um cliente padrão com Timeout é criado.
+	//
+	// SEGURANÇA: o cliente HTTP informado NÃO deve utilizar
+	// tls.Config{InsecureSkipVerify: true} ou transportes que
+	// desabilitem a verificação de certificados TLS, pois isso
+	// abriria uma vulnerabilidade de MITM (Man-In-The-Middle).
+	// Também não devem ser usados transportes que loguem ou
+	// desviem requisições para destinos não autorizados.
 	HTTPClient *http.Client
 }
 
@@ -87,6 +94,11 @@ func New(cfg Config) (*Client, error) {
 		httpClient.Timeout = timeout
 	}
 
+	// Validação de segurança: rejeita clientes HTTP com verificação TLS desabilitada
+	if err := validateHTTPClientTLS(httpClient); err != nil {
+		return nil, err
+	}
+
 	client := openai.NewClient(
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),
@@ -98,6 +110,41 @@ func New(cfg Config) (*Client, error) {
 		model:  cfg.Model,
 		apiKey: cfg.APIKey,
 	}, nil
+}
+
+// validateHTTPClientTLS verifica se o http.Client fornecido não possui
+// configurações TLS inseguras, como InsecureSkipVerify ativado.
+// Retorna erro se encontrar uma configuração que comprometa a segurança
+// da comunicação com a API.
+func validateHTTPClientTLS(c *http.Client) error {
+	if c == nil {
+		return nil
+	}
+
+	transport := c.Transport
+	if transport == nil {
+		return nil // http.DefaultTransport é seguro
+	}
+
+	t, ok := transport.(*http.Transport)
+	if !ok {
+		// Transport customizado não é um *http.Transport padrão;
+		// não podemos inspecionar, mas confiamos no caller.
+		return nil
+	}
+
+	if t.TLSClientConfig != nil && t.TLSClientConfig.InsecureSkipVerify {
+		return errors.New("HTTPClient com InsecureSkipVerify=true rejeitado: " +
+			"verificação TLS desabilitada expõe a comunicação a ataques MITM")
+	}
+
+	// Verifica se há um RootCAs personalizado — não é necessariamente inseguro,
+	// mas merece atenção. Apenas documentamos (não bloqueamos).
+	if t.TLSClientConfig != nil && t.TLSClientConfig.RootCAs != nil {
+		// Uso de RootCAs customizado — assumimos que é intencional.
+	}
+
+	return nil
 }
 
 // Summarize envia um prompt e texto para a API e retorna o resumo.
@@ -167,7 +214,7 @@ var ErrTimeout = errors.New("a requisição excedeu o tempo limite")
 func (s *Client) classifyAPIError(err error) error {
 	// Redige credenciais primeiro para evitar vazamento antes de qualquer
 	// classificação do erro.
-	redactedMsg := redactCredentials(err.Error(), s.apiKey)
+	redactedMsg := RedactCredentials(err.Error(), s.apiKey)
 
 	// Detecta timeout antes de tentar interpretar como erro da API,
 	// pois timeouts podem manifestar-se como erros de rede antes mesmo
@@ -183,7 +230,7 @@ func (s *Client) classifyAPIError(err error) error {
 
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
-		msg := redactCredentials(apiErr.Error(), s.apiKey)
+		msg := RedactCredentials(apiErr.Error(), s.apiKey)
 
 		switch apiErr.StatusCode {
 		case 401:
@@ -215,10 +262,14 @@ func (s *Client) classifyAPIError(err error) error {
 	}
 }
 
-// redactCredentials substitui quaisquer padrões de credenciais
+// RedactCredentials substitui quaisquer padrões de credenciais
 // encontrados em s por "***REDACTED***".
 // Também redige a chave de API fornecida (qualquer formato).
-func redactCredentials(s, apiKey string) string {
+//
+// Esta função é exportada para permitir reuso em outras camadas
+// (ex: testes de integração que precisam redigir dados antes de
+// persistir cassetes HTTP).
+func RedactCredentials(s, apiKey string) string {
 	if apiKey != "" {
 		s = strings.ReplaceAll(s, apiKey, "***REDACTED***")
 	}

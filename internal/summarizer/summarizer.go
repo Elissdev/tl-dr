@@ -190,6 +190,14 @@ func (s *Client) Summarize(ctx context.Context, systemPrompt, userText string) (
 	copy(apiKeyCopy, s.apiKey)
 	s.mu.Unlock()
 
+	// Garante que a cópia da chave seja zerada após o uso em
+	// classifyAPIError, minimizando a janela de exposição.
+	defer func() {
+		for i := range apiKeyCopy {
+			apiKeyCopy[i] = 0
+		}
+	}()
+
 	chat, err := s.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			{

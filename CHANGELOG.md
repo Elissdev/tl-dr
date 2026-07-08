@@ -1,5 +1,47 @@
 # Changelog
 
+## PR #19 — Fase 7: CI/CD com GitHub Actions + Correções de Code Review (2026-07-08)
+
+### 🟢 Novas Funcionalidades
+
+#### CI/CD com GitHub Actions
+
+- **4 jobs independentes**: `test`, `lint`, `build`, `release` com dependências claras (`needs`)
+- **CI em todas as branches**: triggers `push` e `pull_request` sem restrição de branch
+- **Release automática**: disparada em tags `v*`, com `github.event_name != 'pull_request'` para evitar release acidental em PRs
+- **Race detector**: `go test -race -count=1` em todo o codebase
+- **Gosec security scan**: `gosec -exclude-dir=internal/integration ./...`
+- **Upload de artifact**: binário compilado disponível como artifact dos PRs
+- **Cross-compilação**: `GOOS=linux GOARCH=amd64 go build` para consistência
+
+#### Constantes nomeadas para UTF-8 e ANSI
+
+- **`cmd/root.go`**: números mágicos substituídos por constantes nomeadas:
+  - `utf8Lead2`/`utf8Lead2End`, `utf8Lead3`/`utf8Lead3End`, `utf8Lead4`/`utf8Lead4End`
+  - `utf8ContStart`/`utf8ContEnd`, `c1Start`/`c1End`
+  - `csi8bit`, `osc8bit`, `dcs8bit`, `sos8bit`, `pm8bit`, `apc8bit`, `st8bit`, `sci8bit`
+  - `bel`, `esc`, `c0Min`/`c0Max`, `csiFinalMin`/`csiFinalMax`
+
+#### Case-insensitive locale lookup
+
+- **`getLocale()`** agora normaliza o idioma com `strings.ToLower()` + `strings.ReplaceAll("_", "-")`, aceitando `"PT-BR"`, `"pt_BR"`, `"Pt-br"` como equivalentes a `"pt-br"`
+
+### 🔧 Melhorias
+
+- **Validação de `--timeout < 0`**: retorna `ExitArgs` com mensagem clara em vez de comportamento indefinido
+- **Fail fast**: validação de `--timeout` movida para antes de `ReadInput` — feedback instantâneo sem esperar I/O
+- **Help do `--timeout`**: descrição atualizada para "deve ser > 0; default: 30"
+- **`finish_reason` com switch**: tratamento explícito de `stop`, `length`, `content_filter` + fallback para valores desconhecidos (`tool_calls`, `function_call`)
+- **`apiKeyCopy` zerada após uso**: `defer` com loop de zeroing em `Summarize()` minimiza janela de exposição da chave
+- **CI juda `push`** já não mais restrito a `main`
+
+### 🧪 Testes
+
+- `TestGetLocaleCaseInsensitive` — 6 subtestes cobrindo `PT-BR`, `pt_BR`, `Pt-br`, `PT`, equivalência entre variantes, `EN` maiúsculo
+- `TestExecute/--timeout_negativo_(fail_fast_antes_de_IO)` — validação sem necessidade de API key ou arquivo
+
+---
+
 ## PR #18 — Fase 6: Testes Unitários e de Integração com Cassete (2026-07-08)
 
 ### 🔴 Breaking Changes

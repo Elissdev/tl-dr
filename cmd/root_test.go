@@ -520,6 +520,57 @@ func TestGetLocale(t *testing.T) {
 	})
 }
 
+func TestGetLocaleCaseInsensitive(t *testing.T) {
+	t.Run("PT-BR maiúsculo mapeia para pt-br", func(t *testing.T) {
+		lc := getLocale("PT-BR")
+		if lc.SafetyPrefix != SafetyPrefixPT {
+			t.Errorf("getLocale(PT-BR) SafetyPrefix = %q, want %q", lc.SafetyPrefix, SafetyPrefixPT)
+		}
+	})
+
+	t.Run("pt_BR underscore mapeia para pt-br", func(t *testing.T) {
+		lc := getLocale("pt_BR")
+		if lc.SafetyPrefix != SafetyPrefixPT {
+			t.Errorf("getLocale(pt_BR) SafetyPrefix = %q, want %q", lc.SafetyPrefix, SafetyPrefixPT)
+		}
+	})
+
+	t.Run("Pt-br mixed case mapeia para pt-br", func(t *testing.T) {
+		lc := getLocale("Pt-br")
+		if lc.SafetyPrefix != SafetyPrefixPT {
+			t.Errorf("getLocale(Pt-br) SafetyPrefix = %q, want %q", lc.SafetyPrefix, SafetyPrefixPT)
+		}
+	})
+
+	t.Run("PT uppercase mapeia para pt", func(t *testing.T) {
+		lc := getLocale("PT")
+		if lc.SafetyPrefix != SafetyPrefixPT {
+			t.Errorf("getLocale(PT) SafetyPrefix = %q, want %q", lc.SafetyPrefix, SafetyPrefixPT)
+		}
+	})
+
+	t.Run("case-insensitive todos equivalem a pt-br", func(t *testing.T) {
+		variants := []string{"pt-br", "PT-BR", "Pt-Br", "pt_BR", "PT_BR"}
+		ref := getLocale("pt-br")
+		for _, v := range variants {
+			got := getLocale(v)
+			if got.SafetyPrefix != ref.SafetyPrefix {
+				t.Errorf("getLocale(%q) != getLocale(pt-br): SafetyPrefix %q vs %q", v, got.SafetyPrefix, ref.SafetyPrefix)
+			}
+			if got.DefaultPrompt != ref.DefaultPrompt {
+				t.Errorf("getLocale(%q) != getLocale(pt-br): DefaultPrompt difere", v)
+			}
+		}
+	})
+
+	t.Run("inglês também funciona com maiúsculas", func(t *testing.T) {
+		lc := getLocale("EN")
+		if lc.SafetyPrefix != SafetyPrefixEN {
+			t.Errorf("getLocale(EN) SafetyPrefix = %q, want %q", lc.SafetyPrefix, SafetyPrefixEN)
+		}
+	})
+}
+
 func TestFirstNonEmpty(t *testing.T) {
 	tests := []struct {
 		name string
@@ -813,6 +864,38 @@ func TestExecute(t *testing.T) {
 
 		if err == nil {
 			t.Fatal("Execute() com arquivo inexistente = nil, want erro")
+		}
+	})
+
+	t.Run("--timeout negativo (fail fast antes de I/O)", func(t *testing.T) {
+		// Validação de timeout é fail fast — acontece antes de ReadInput
+		// mas depois de config.Load(). Precisamos de API key para passar
+		// da config, mas não de arquivo (evita I/O desnecessário).
+		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
+		os.Setenv("TLDR_API_KEY", "sk-test-key-for-execute")
+		defer func() {
+			if keyExisted {
+				os.Setenv("TLDR_API_KEY", prevKey)
+			} else {
+				os.Unsetenv("TLDR_API_KEY")
+			}
+		}()
+
+		cmd := newRootCommand("test")
+		// Timeout negativo falha antes de ReadInput — não precisa de arquivo
+		cmd.SetArgs([]string{"--lang", "en", "--timeout", "-5"})
+		err := cmd.Execute()
+
+		if err == nil {
+			t.Fatal("--timeout -5 deveria retornar erro, mas retornou nil")
+		}
+		if !strings.Contains(err.Error(), "positivo") {
+			t.Errorf("erro = %q, want contendo 'positivo'", err.Error())
+		}
+
+		// Verifica que o erro é do tipo ExitArgs (código 3)
+		if !IsArgumentError(err) {
+			t.Errorf("erro deveria ser ArgumentError, got %T", err)
 		}
 	})
 }

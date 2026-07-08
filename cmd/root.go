@@ -98,6 +98,12 @@ Exemplos de uso:
 				fmt.Fprintf(os.Stderr, "🤖 Modelo: %s\n", resolvedModel)
 			}
 
+			// Valida flags antes de qualquer I/O (fail fast)
+			if *timeoutFlag < 0 {
+				return WrapExitError(ExitArgs,
+					fmt.Errorf("--timeout deve ser um número positivo em segundos, got %d", *timeoutFlag))
+			}
+
 			// 3. Ler entrada
 			text, err := input.ReadInput(args)
 			if err != nil {
@@ -125,9 +131,6 @@ Exemplos de uso:
 			timeout := cfg.Timeout
 			if *timeoutFlag > 0 {
 				timeout = time.Duration(*timeoutFlag) * time.Second
-			} else if *timeoutFlag < 0 {
-				return WrapExitError(ExitArgs,
-					fmt.Errorf("--timeout deve ser um número positivo em segundos, got %d", *timeoutFlag))
 			}
 
 			// 6. Chamar API
@@ -248,7 +251,11 @@ var defaultLocale = localeConfig{
 // para "pt-br" antes da busca no mapa.
 // Se o idioma não estiver mapeado, retorna o fallback em inglês.
 func getLocale(lang string) localeConfig {
-	if cfg, ok := supportedLocales[strings.ToLower(lang)]; ok {
+	// Normaliza: lower case + underscore para hífen
+	// Ex: "PT-BR" → "pt-br", "pt_BR" → "pt-br", "Pt-br" → "pt-br"
+	normalized := strings.ToLower(lang)
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	if cfg, ok := supportedLocales[normalized]; ok {
 		return cfg
 	}
 	return defaultLocale

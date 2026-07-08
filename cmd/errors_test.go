@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
@@ -18,7 +17,7 @@ func TestExitError(t *testing.T) {
 	})
 
 	t.Run("WrapExitError", func(t *testing.T) {
-		original := fmt.Errorf("erro original: %s", "detalhe")
+		original := errors.New("erro original: detalhe")
 		err := WrapExitError(ExitArgs, original)
 		if err.Code != ExitArgs {
 			t.Errorf("Code = %d, want %d", err.Code, ExitArgs)
@@ -39,7 +38,7 @@ func TestExitError(t *testing.T) {
 			t.Error("IsAPIError(ExitInternal) = true, want false")
 		}
 
-		if IsAPIError(fmt.Errorf("erro comum")) {
+		if IsAPIError(errors.New("erro comum")) {
 			t.Error("IsAPIError(erro comum) = true, want false")
 		}
 	})
@@ -57,7 +56,7 @@ func TestExitError(t *testing.T) {
 	})
 
 	t.Run("Unwrap", func(t *testing.T) {
-		original := fmt.Errorf("original error")
+		original := errors.New("original error")
 		err := WrapExitError(ExitInternal, original)
 		unwrapped := errors.Unwrap(err)
 		if unwrapped != original {

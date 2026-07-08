@@ -1,5 +1,71 @@
 # Changelog
 
+## PR #15 — Fase 4: Integração com API (2026-07-07)
+
+### 🔴 Breaking Changes
+
+#### `summarizer.Client.Summarize()` — `panic` substituído por `error`
+
+- **Antes:** Chamar `Summarize()` após `Clear()` causava `panic`
+- **Depois:** Retorna erro `"summarizer: Client usado após Clear()"`
+- **Ação:** Se seu código capturava o panic com `recover`, agora deve tratar o erro normalmente
+
+#### `summarizer.Client.apiKey` — tipo alterado de `string` para `[]byte`
+
+- Campo não exportado do pacote (afeta apenas código interno)
+- Função `redactCredentials` teve assinatura atualizada: `(s string, apiKey []byte)`
+
+#### `sanitizePrompt()` — flag `--prompt` agora sanitizada
+
+- **Antes:** Prompt customizado passava diretamente para a API
+- **Depois:** Padrões de injeção são substituídos por `[REMOVED]`; prompt 100% injetivo causa erro
+- **Mitigação:** Regex calibrada; `"now"` não é mais gatilho isolado (evita falso positivo)
+
+#### `config.Load()` — novo side effect em stderr
+
+- **Antes:** `Load()` não escrevia em stderr
+- **Depois:** Se `.env` tiver permissões >0600, emite warning no stderr
+- **Mitigação:** Use `chmod 600 .env` para silenciar
+
+#### `secrets.LoadAPIKey()` — mensagem de erro alterada
+
+- **Antes:** `"TLDR_API_KEY não definida"`
+- **Depois:** `"TLDR_API_KEY não definida (defina a variável ou TLDR_API_KEY_FILE)"`
+
+#### `config.Clear()` — semântica reforçada
+
+- **Antes:** Usar struct após Clear() era possível (APIKey retornava "")
+- **Depois:** Contrato explicita que struct não deve mais ser usada após Clear()
+
+### 🟢 Novas Funcionalidades
+
+- **`TLDR_API_KEY_FILE`**: ler chave de API de arquivo (fallback quando `TLDR_API_KEY` não definida)
+- **`secrets.ProtectedAPIKey.Bytes()`**: retorna cópia da chave como `[]byte` (defensiva)
+- **`config.Config.APIKeyBytes()`**: acessa chave como `[]byte` via Config
+- **`summarizer.Client.Clear()`**: zera a chave de API da memória do Client
+- **`sanitizePrompt()`**: sanitização de prompts customizados contra injeção
+- **Tratamento de bytes C1 (0x80-0x9F)** em `sanitizeOutput()` com estado UTF-8
+
+### 🔧 Melhorias
+
+- `ProtectedAPIKey.Bytes()` retorna cópia defensiva (não mais referência direta ao slice interno)
+- Regex de prompt injection: `now` removido como gatilho (falso positivo)
+- `sanitizeOutput()`: corrigido bug onde `0x1b` (ESC) podia ser escrito na saída quando `utf8Remaining > 0`
+- `Summarize()` pós-Clear retorna erro em vez de panic
+- Warning de permissão do `.env` em inglês
+- `cfg.Clear()` agora é chamado imediatamente (sem defer); `s.Clear()` mantém `defer`
+
+### 🧪 Testes
+
+- `TestSanitizePrompt` — 13 casos incluindo normal, vazio, injeção total/parcial, padrões mistos
+- `TestSanitizeOutputC1Bytes` — CSI, OSC, DCS, SOS, PM, APC, ST, C1 genérico, misto com ESC
+- `TestAPIKeyBytes` — slice correto, nil após Clear
+- `TestProtectedAPIKeyBytes` — retorna cópia (mutação não afeta original), nil após Clear
+- `TestCheckEnvPermissions` — sem .env, 0600, 0644 com warning
+- `TestClientClear` — Clear zera apiKey, Summarize após Clear retorna erro, double Clear seguro
+
+---
+
 ## PR #14 — Conclusão das 11 Code Reviews (2026-07-03)
 
 ### 🔴 Breaking Changes na API Pública

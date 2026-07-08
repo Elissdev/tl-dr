@@ -107,6 +107,9 @@ func New(cfg Config) (*Client, error) {
 func (s *Client) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.cleared {
+		return // já foi limpo — seguro chamar múltiplas vezes
+	}
 	for i := range s.apiKey {
 		s.apiKey[i] = 0
 	}

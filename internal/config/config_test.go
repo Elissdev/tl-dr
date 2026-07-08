@@ -3,6 +3,7 @@ package config
 import (
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -193,104 +194,155 @@ func TestAPIKeyBytes(t *testing.T) {
 	})
 }
 
-func TestCheckEnvPermissions(t *testing.T) {
-	t.Run("sem .env não emite warning", func(t *testing.T) {
-		// Remove .env temporariamente se existir
-		_, err := os.ReadFile(".env")
-		hadEnv := err == nil
-		if hadEnv {
-			if err := os.Rename(".env", ".env.bak"); err != nil {
-				t.Fatalf("erro ao renomear .env: %v", err)
-			}
-			defer func() {
-				if err := os.Rename(".env.bak", ".env"); err != nil {
-					t.Errorf("erro ao restaurar .env: %v", err)
-				}
-			}()
-		}
-
-		// Captura stderr
+func TestCheckFilePermissions(t *testing.T) {
+	t.Run("arquivo inexistente não emite warning", func(t *testing.T) {
 		stderr := captureStderr(t, func() {
-			checkEnvPermissions()
+			checkFilePermissions(t.TempDir() + "/arquivo_inexistente")
 		})
 		if stderr != "" {
-			t.Errorf("sem .env não deveria emitir warning, got: %s", stderr)
+			t.Errorf("arquivo inexistente não deveria emitir warning, got: %s", stderr)
 		}
 	})
 
-	t.Run(".env com permissão 0600 não emite warning", func(t *testing.T) {
-		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o600)
+	t.Run("arquivo com permissão 0600 não emite warning", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := tempDir + "/perms_0600"
+		err := os.WriteFile(path, []byte("TEST=1"), 0o600)
 		if err != nil {
 			t.Fatalf("erro ao criar arquivo temporário: %v", err)
 		}
-		defer os.Remove(".env_test_perms")
-
-		// Renomeia .env temporário
-		_, err = os.ReadFile(".env")
-		hadEnv := err == nil
-		if hadEnv {
-			if err := os.Rename(".env", ".env.bak"); err != nil {
-				t.Fatalf("erro ao renomear .env: %v", err)
-			}
-			defer func() {
-				if err := os.Rename(".env.bak", ".env"); err != nil {
-					t.Errorf("erro ao restaurar .env: %v", err)
-				}
-			}()
-		}
-		if err := os.Rename(".env_test_perms", ".env"); err != nil {
-			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
-		}
-		defer func() {
-			if err := os.Rename(".env", ".env_test_perms"); err != nil {
-				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
-			}
-		}()
 
 		stderr := captureStderr(t, func() {
-			checkEnvPermissions()
+			checkFilePermissions(path)
 		})
 		if stderr != "" {
 			t.Errorf("0600 não deveria emitir warning, got: %s", stderr)
 		}
 	})
 
-	t.Run(".env com permissão 0644 emite warning", func(t *testing.T) {
-		err := os.WriteFile(".env_test_perms", []byte("TEST=1"), 0o644)
+	t.Run("arquivo com permissão 0640 emite warning de grupo", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := tempDir + "/perms_0640"
+		err := os.WriteFile(path, []byte("TEST=1"), 0o640)
 		if err != nil {
 			t.Fatalf("erro ao criar arquivo temporário: %v", err)
 		}
-		defer os.Remove(".env_test_perms")
-
-		_, err = os.ReadFile(".env")
-		hadEnv := err == nil
-		if hadEnv {
-			if err := os.Rename(".env", ".env.bak"); err != nil {
-				t.Fatalf("erro ao renomear .env: %v", err)
-			}
-			defer func() {
-				if err := os.Rename(".env.bak", ".env"); err != nil {
-					t.Errorf("erro ao restaurar .env: %v", err)
-				}
-			}()
-		}
-		if err := os.Rename(".env_test_perms", ".env"); err != nil {
-			t.Fatalf("erro ao renomear .env_test_perms para .env: %v", err)
-		}
-		defer func() {
-			if err := os.Rename(".env", ".env_test_perms"); err != nil {
-				t.Errorf("erro ao restaurar .env_test_perms: %v", err)
-			}
-		}()
 
 		stderr := captureStderr(t, func() {
-			checkEnvPermissions()
+			checkFilePermissions(path)
+		})
+		if !strings.Contains(stderr, "WARNING") {
+			t.Errorf("0640 deveria emitir warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "grupo") {
+			t.Errorf("warning deveria mencionar 'grupo', got: %q", stderr)
+		}
+	})
+
+	t.Run("arquivo com permissão 0644 emite warning", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := tempDir + "/perms_0644"
+		err := os.WriteFile(path, []byte("TEST=1"), 0o644)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+
+		stderr := captureStderr(t, func() {
+			checkFilePermissions(path)
 		})
 		if !strings.Contains(stderr, "WARNING") {
 			t.Errorf("0644 deveria emitir warning, got: %q", stderr)
 		}
 		if !strings.Contains(stderr, "600") {
 			t.Errorf("warning deveria recomendar chmod 600, got: %q", stderr)
+		}
+	})
+
+	t.Run("arquivo em subdiretório com permissão 0644 emite warning com caminho", func(t *testing.T) {
+		tempDir := t.TempDir()
+		subDir := tempDir + "/sub"
+		err := os.MkdirAll(subDir, 0o755)
+		if err != nil {
+			t.Fatalf("erro ao criar diretório: %v", err)
+		}
+
+		path := subDir + "/api-key.txt"
+		err = os.WriteFile(path, []byte("sk-test-key"), 0o644)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo: %v", err)
+		}
+
+		stderr := captureStderr(t, func() {
+			checkFilePermissions(path)
+		})
+		if !strings.Contains(stderr, "WARNING") {
+			t.Errorf("0644 deveria emitir warning, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, path) {
+			t.Errorf("warning deveria conter o caminho %q, got: %q", path, stderr)
+		}
+	})
+
+	t.Run("diretório não emite warning", func(t *testing.T) {
+		tempDir := t.TempDir()
+		subDir := tempDir + "/subdir"
+		err := os.MkdirAll(subDir, 0o755)
+		if err != nil {
+			t.Fatalf("erro ao criar diretório: %v", err)
+		}
+
+		stderr := captureStderr(t, func() {
+			checkFilePermissions(subDir)
+		})
+		if stderr != "" {
+			t.Errorf("diretório não deveria emitir warning, got: %s", stderr)
+		}
+	})
+
+	t.Run("arquivo sem permissão de leitura não emite warning", func(t *testing.T) {
+		tempDir := t.TempDir()
+		path := tempDir + "/perms_000"
+		err := os.WriteFile(path, []byte("TEST=1"), 0o000)
+		if err != nil {
+			t.Fatalf("erro ao criar arquivo temporário: %v", err)
+		}
+
+		stderr := captureStderr(t, func() {
+			checkFilePermissions(path)
+		})
+		// 0o000 não tem permissão de leitura para ninguém, inclusive owner,
+		// então stat pode falhar (EACCES) ou passar — depende do OS.
+		// Apenas verificamos que não é um falso positivo claro.
+		if stderr != "" && strings.Contains(stderr, "legível") {
+			t.Errorf("000 não deveria dizer que é legível, got: %s", stderr)
+		}
+	})
+
+	t.Run("erro inesperado de stat loga warning", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("pulado: Windows não usa permissões Unix")
+		}
+		if os.Geteuid() == 0 {
+			t.Skip("pulado: root não sofre EACCES, stat sempre funciona")
+		}
+
+		tempDir := t.TempDir()
+		// Cria um diretório sem permissão de leitura/execução para que
+		// os.Stat em um arquivo dentro dele retorne EACCES (não ErrNotExist)
+		subDir := tempDir + "/sem_acesso"
+		err := os.MkdirAll(subDir, 0o000)
+		if err != nil {
+			t.Fatalf("erro ao criar diretório sem permissão: %v", err)
+		}
+
+		stderr := captureStderr(t, func() {
+			checkFilePermissions(subDir + "/arquivo.txt")
+		})
+		if !strings.Contains(stderr, "não foi possível verificar permissões") {
+			t.Errorf("era esperado warning de erro de stat, got: %q", stderr)
+		}
+		if !strings.Contains(stderr, "WARNING") {
+			t.Errorf("warning deveria conter WARNING, got: %q", stderr)
 		}
 	})
 }

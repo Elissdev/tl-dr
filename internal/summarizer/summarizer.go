@@ -149,11 +149,7 @@ func validateHTTPClientTLS(c *http.Client) error {
 			"verificação TLS desabilitada expõe a comunicação a ataques MITM")
 	}
 
-	// Verifica se há um RootCAs personalizado — não é necessariamente inseguro,
-	// mas merece atenção. Apenas documentamos (não bloqueamos).
-	if t.TLSClientConfig != nil && t.TLSClientConfig.RootCAs != nil {
-		// Uso de RootCAs customizado — assumimos que é intencional.
-	}
+	// NOTA: RootCAs personalizado não é bloqueado — assumimos que é intencional.
 
 	return nil
 }
@@ -308,9 +304,18 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 	}
 }
 
-// redactCredentials substitui quaisquer padrões de credenciais
+// RedactCredentials substitui quaisquer padrões de credenciais
 // encontrados em s por "***REDACTED***".
 // Também redige a chave de API fornecida (qualquer formato).
+//
+// Esta função é exportada para permitir reuso em outras camadas
+// (ex: testes de integração que precisam redigir dados antes de
+// persistir cassetes HTTP).
+func RedactCredentials(s, apiKey string) string {
+	return redactCredentials(s, []byte(apiKey))
+}
+
+// redactCredentials é a implementação interna de RedactCredentials.
 // O parâmetro apiKey é []byte para permitir que o caller gerencie
 // o ciclo de vida da memória da chave.
 func redactCredentials(s string, apiKey []byte) string {

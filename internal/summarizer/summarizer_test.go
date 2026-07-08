@@ -96,6 +96,67 @@ func TestNew(t *testing.T) {
 			t.Fatal("New() retornou nil")
 		}
 	})
+
+	t.Run("HTTPClient custom sem timeout usa padrão", func(t *testing.T) {
+		// Cliente HTTP sem timeout definido — deve herdar o timeout do config
+		customClient := &http.Client{}
+
+		s, err := New(Config{
+			APIKey:     "sk-test",
+			BaseURL:    "https://api.example.com/v1",
+			Model:      "test-model",
+			Timeout:    15 * time.Second,
+			HTTPClient: customClient,
+		})
+		if err != nil {
+			t.Fatalf("New() erro inesperado: %v", err)
+		}
+		if s == nil {
+			t.Fatal("New() retornou nil")
+		}
+		// O timeout deve ter sido aplicado ao cliente HTTP custom
+		if customClient.Timeout != 15*time.Second {
+			t.Errorf("HTTPClient.Timeout = %v, want %v", customClient.Timeout, 15*time.Second)
+		}
+	})
+
+	t.Run("HTTPClient custom com timeout é preservado", func(t *testing.T) {
+		customClient := &http.Client{Timeout: 42 * time.Second}
+
+		s, err := New(Config{
+			APIKey:     "sk-test",
+			BaseURL:    "https://api.example.com/v1",
+			Model:      "test-model",
+			Timeout:    30 * time.Second, // diferente do cliente
+			HTTPClient: customClient,
+		})
+		if err != nil {
+			t.Fatalf("New() erro inesperado: %v", err)
+		}
+		if s == nil {
+			t.Fatal("New() retornou nil")
+		}
+		// Timeout do cliente não deve ser sobrescrito se já foi definido
+		if customClient.Timeout != 42*time.Second {
+			t.Errorf("HTTPClient.Timeout = %v, want %v (preservado)", customClient.Timeout, 42*time.Second)
+		}
+	})
+
+	t.Run("HTTPClient nil cria cliente padrão", func(t *testing.T) {
+		s, err := New(Config{
+			APIKey:     "sk-test",
+			BaseURL:    "https://api.example.com/v1",
+			Model:      "test-model",
+			Timeout:    10 * time.Second,
+			HTTPClient: nil,
+		})
+		if err != nil {
+			t.Fatalf("New() erro inesperado: %v", err)
+		}
+		if s == nil {
+			t.Fatal("New() retornou nil")
+		}
+	})
 }
 
 func TestSummarize(t *testing.T) {

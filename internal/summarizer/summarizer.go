@@ -49,6 +49,10 @@ type Config struct {
 	BaseURL string
 	Model   string
 	Timeout time.Duration
+
+	// HTTPClient permite injetar um cliente HTTP customizado (ex: para testes com go-vcr).
+	// Se nil, um cliente padrão com Timeout é criado.
+	HTTPClient *http.Client
 }
 
 // Client gerencia a comunicação com a API de sumarização.
@@ -76,10 +80,17 @@ func New(cfg Config) (*Client, error) {
 		timeout = 30 * time.Second
 	}
 
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: timeout}
+	} else if httpClient.Timeout == 0 {
+		httpClient.Timeout = timeout
+	}
+
 	client := openai.NewClient(
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),
-		option.WithHTTPClient(&http.Client{Timeout: timeout}),
+		option.WithHTTPClient(httpClient),
 		option.WithMaxRetries(0), // sem retry automático — tratamos erros no classifyAPIError
 	)
 	return &Client{

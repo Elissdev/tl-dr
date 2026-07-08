@@ -1,4 +1,4 @@
-.PHONY: build test test-verbose test-race test-integration lint lint-ci clean commit-push
+.PHONY: build test test-verbose test-race test-integration lint lint-ci clean commit-push release
 
 BINARY_NAME ?= tldr
 BUILD_DIR ?= build
@@ -44,3 +44,16 @@ clean:
 commit-push:
 	@BRANCH=$$(git branch --show-current); \
 	git add -A && git commit -m "$(m)" && git push origin $$BRANCH
+
+# Release: cria uma tag SemVer, faz push (dispara o job release no CI)
+# Uso: make release v=v0.1.0
+release:
+	@if [ -z "$(v)" ]; then \
+		echo "Uso: make release v=v0.1.0"; \
+		exit 1; \
+	fi
+	@echo "Criando release $(v)..."
+	git tag -a "$(v)" -m "Release $(v)"
+	git push origin "$(v)"
+	@echo "✅ Release $(v) criada e enviada!"
+	@echo "O CI criará o release no GitHub automaticamente."

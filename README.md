@@ -1,11 +1,38 @@
 # tl;dr — Resumidor de texto via CLI
 
+<div align="center">
+
+[![Go Version](https://img.shields.io/badge/Go-1.22.5-00ADD8?logo=go)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/Elissdev/tl-dr/actions/workflows/ci.yml/badge.svg)](https://github.com/Elissdev/tl-dr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Elissdev/tl-dr)](https://github.com/Elissdev/tl-dr/releases)
+
+</div>
+
 CLI de sumarização de texto com suporte a múltiplos idiomas, via API compatível com OpenAI.
 
 ## Instalação
 
+### Via binário (recomendado)
+
+Baixe o binário mais recente para Linux/amd64 na [página de releases](https://github.com/Elissdev/tl-dr/releases):
+
 ```bash
-# Compilar a partir do código-fonte
+# Baixar a última versão
+curl -L -o tldr https://github.com/Elissdev/tl-dr/releases/latest/download/tldr-linux-amd64
+chmod +x tldr
+sudo mv tldr /usr/local/bin/
+```
+
+### Via go install
+
+```bash
+go install github.com/Elissdev/tl-dr@latest
+```
+
+### Compilar a partir do código-fonte
+
+```bash
 git clone https://github.com/Elissdev/tl-dr
 cd tl-dr
 make build
@@ -117,13 +144,38 @@ make build
 # Rodar testes
 make test
 
+# Testes com race detector
+make test-race
+
 # Lint
 make lint
 
 # Limpar artefatos
 make clean
+
+# Criar release (tag + push)
+make release v=v0.1.0
 ```
+
+## Contribuição
+
+Contribuições são bem-vindas! Siga os passos:
+
+1. Faça um fork do repositório
+2. Crie uma branch para sua feature: `git checkout -b feat/minha-feature`
+3. Faça suas alterações
+4. Rode os testes: `make test` e `make test-race`
+5. Rode o linter: `make lint`
+6. Faça commit e push
+7. Abra um Pull Request
+
+### Convenções
+
+- **Commits:** use prefixos semânticos (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
+- **Branches:** `feat/nome-da-feature` ou `fix/nome-do-fix`
+- **Testes:** todo código novo deve ter testes
+- **Lint:** o linter deve passar antes do merge
 
 ## Licença
 
-A definir.
+Distribuído sob a licença MIT. Veja [LICENSE](LICENSE) para mais informações.

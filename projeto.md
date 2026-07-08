@@ -12,7 +12,7 @@
 - **Framework CLI:** Cobra
 - **SDK da API:** OpenAI Go SDK (`github.com/openai/openai-go`)
 - **Público:** Uso pessoal
-- **Licença:** (a definir)
+- **Licença:** MIT
 
 ---
 

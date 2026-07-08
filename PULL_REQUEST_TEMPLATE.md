@@ -1,6 +1,6 @@
-# Pull Request #18 — Fase 6: Testes Unitários e de Integração com Cassete
+# Pull Request #19 — Fase 7: CI/CD com GitHub Actions + Correções de Code Review
 
-> **Branch:** `feat/fase-6-testes`
+> **Branch:** `feat/fase-7-cicd`
 > **Base:** `main`
 > **Status:** 🟢 Pronto para merge
 
@@ -8,202 +8,88 @@
 
 ## 📋 Resumo
 
-Esta PR implementa a **Fase 6** do projeto tl;dr, adicionando **testes de integração com gravação/reprodução via cassete (go-vcr)**, além de correções de segurança, performance e robustez identificadas no code review. As principais áreas afetadas são: testes de integração offline com HTTP recording/replay, thread-safety do Client, validação TLS, redação de credenciais exportada, pré-filtro de keywords em sanitizePrompt, e correção da ordem de classificação de erros da API.
-
----
-
-## 🔴 Breaking Changes
-
-### `ProtectedAPIKey.Bytes()` — agora retorna cópia defensiva (não referência direta)
-
-```go
-// Antes
-b := key.Bytes()
-b[0] = 'X'        // Modificava o slice interno da chave!
-key.Get() == "Xk-..." // true — vazamento via mutação
-
-// Depois
-b := key.Bytes()
-b[0] = 'X'        // Não afeta o original
-key.Get() == "sk-..." // true — cópia defensiva
-```
-
-**Ação:** Código que dependia da mutação do slice retornado por `Bytes()` para modificar a chave precisa ser revisado. A nova semântica é de cópia defensiva.
-
-### `Config.APIKeyBytes()` — renomeado para `apiKeyBytes()` (não exportado)
-
-- **Antes:** `cfg.APIKeyBytes()` — exportado, disponível para callers externos
-- **Depois:** `cfg.apiKeyBytes()` — não exportado, uso interno apenas
-- **Ação:** Código externo que chamava `cfg.APIKeyBytes()` agora deve acessar a chave via `cfg.APIKey` (string) ou via `secrets.ProtectedAPIKey.Bytes()`
-
-### `checkEnvPermissions()` — renomeado e com assinatura alterada
-
-- **Antes:** `checkEnvPermissions()` — fixo para `.env`, sem parâmetros
-- **Depois:** `checkFilePermissions(path string)` — genérico, recebe caminho do arquivo
-- **Ação:** Código que chamava `checkEnvPermissions()` precisa ser atualizado para `checkFilePermissions(".env")`
-
-### `envPermsWarn` — renomeado para `filePermsWarn`
-
-- Constante não exportada — afeta apenas código interno
-- Mensagem de warning alterada de português (`"⚠️  AVISO:"`) para inglês (`"⚠️  WARNING:"`)
-- Mensagem agora inclui o caminho do arquivo específico nas permissões
+Esta PR implementa a **Fase 7** do projeto tl;dr, adicionando **CI/CD completo com GitHub Actions** (4 jobs independentes: test, lint, build, release), além de melhorias de código identificadas no code review. As principais áreas afetadas são: pipeline de CI desacoplado de branch específica, cross-compilação, release automática via tags, substituição de números mágicos por constantes nomeadas em `sanitizeOutput()`, case-insensitive locale lookup, validação de `--timeout` com fail fast, tratamento explícito de `finish_reason` via switch, e zeroing da cópia da API key após uso.
 
 ---
 
 ## 🟢 Novas Funcionalidades
 
-### Testes de Integração com Cassete (go-vcr)
+### CI/CD com GitHub Actions
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| 🎭 **`go-vcr` v3.2.0** | Dependência adicionada para gravação/reprodução de interações HTTP |
-| 📼 **5 cassetes YAML** | `summarize_success`, `summarize_short`, `summarize_unauthorized`, `summarize_rate_limited`, `summarize_server_error` |
-| 🔒 **Hook BeforeSaveHook** | Redige header `Authorization` e body com credenciais antes de persistir |
-| 🏷️ **Build tag `integration`** | Testes isolados: `go test -tags=integration ./internal/integration/` |
-| 🌐 **Modo Record/Replay** | `TLDR_CASSETE_MODE=record` para gravar; padrão é replay offline |
-| 🔁 **`TLDR_CASSETE_MODE`** | Variável de ambiente que controla modo de operação dos cassetes |
+| 🧪 **Job `test`** | `go test ./... -v -count=1` + `go test ./... -race -count=1` + gosec security scan |
+| 🔍 **Job `lint`** | `golangci-lint` com timeout de 5 minutos |
+| 📦 **Job `build`** | Cross-compilação `GOOS=linux GOARCH=amd64` + upload de artifact (`tldr-linux-amd64`) |
+| 🚀 **Job `release`** | Disparado apenas em tags `v*`, com `github.event_name != 'pull_request'` para evitar release acidental em PRs |
+| 🔄 **CI em todas as branches** | Triggers `push` e `pull_request` sem restrição de branch (antes era restrito a `main`) |
 
-### Segurança
+### Constantes nomeadas para UTF-8 e ANSI
 
-| Funcionalidade | Descrição |
-|----------------|-----------|
-| 🛡️ **`validateHTTPClientTLS()`** | Rejeita `http.Client` com `InsecureSkipVerify=true` no `summarizer.New()` |
-| 🔑 **`RedactCredentials()` exportada** | Função pública para redigir credenciais em qualquer contexto (reuso nos hooks do cassete) |
-| 🔒 **`Client.mu sync.Mutex`** | Thread-safety entre `Summarize()` e `Clear()` — sem race condition |
-| 📋 **`Client.cleared` flag** | Detecta uso após Clear() e retorna erro (em vez de panic) |
-| 🧪 **Cópia defensiva da apiKey** | `Summarize()` copia a chave antes do unlock para uso seguro em `classifyAPIError` |
-| 🗑️ **Lone continuation bytes** | `sanitizeOutput()` descarta bytes 0x80-0xBF isolados (sem lead byte) |
+- **`cmd/root.go`**: Números mágicos substituídos por constantes nomeadas em `sanitizeOutput()`:
+  - **UTF-8 lead bytes**: `utf8Lead2`/`utf8Lead2End` (0xC0-0xDF), `utf8Lead3`/`utf8Lead3End` (0xE0-0xEF), `utf8Lead4`/`utf8Lead4End` (0xF0-0xF7)
+  - **Continuation bytes**: `utf8ContStart`/`utf8ContEnd` (0x80-0xBF)
+  - **C1 control characters**: `c1Start`/`c1End` (0x80-0x9F)
+  - **ANSI 8-bit sequences**: `csi8bit` (0x9B), `osc8bit` (0x9D), `dcs8bit` (0x90), `sos8bit` (0x98), `pm8bit` (0x9E), `apc8bit` (0x9F), `st8bit` (0x9C), `sci8bit` (0x9A)
+  - **Controles diversos**: `bel` (0x07), `esc` (0x1B), `c0Min`/`c0Max` (0x00-0x1F), `csiFinalMin`/`csiFinalMax` (0x40-0x7E)
 
-### Performance
+### Case-insensitive locale lookup
 
-| Funcionalidade | Descrição |
-|----------------|-----------|
-| ⚡ **Pré-filtro de keywords** | `sanitizePrompt()` verifica keywords primeiro; se ausentes, pula scan completo com regexes |
-| 🧩 **`injectionKeywords`** | Lista expandida: `ignore`, `reveal`, `show`, `system`, `user`, `assistant`, etc. |
-
-### Engine
-
-| Funcionalidade | Descrição |
-|----------------|-----------|
-| 🔧 **`Config.HTTPClient`** | Campo opcional para injetar `http.Client` customizado (ex: go-vcr recorder) |
-| 🔄 **`classifyAPIError` reordenado** | Erros HTTP (401, 429, 500) detectados **antes** de fallback por substring |
-| 🚫 **Release job no CI** | Impedido de rodar em eventos de `pull_request` (`github.event_name != 'pull_request'`) |
+- **`getLocale()`** agora normaliza o idioma com `strings.ToLower()` + `strings.ReplaceAll("_", "-")`, aceitando `"PT-BR"`, `"pt_BR"`, `"Pt-br"` como equivalentes a `"pt-br"`
 
 ---
 
 ## 🔧 Melhorias Técnicas
 
-### Correções de segurança/qualidade
-
-| Issue | Solução |
-|-------|---------|
-| **`ProtectedAPIKey.Bytes()` retornava referência direta** | Agora retorna cópia defensiva (`make + copy`) — mutação externa não afeta interno |
-| **Race condition entre Summarize() e Clear()** | Mutex (`s.mu.Lock()`) protege acesso a `apiKey` e `cleared` |
-| **Timeouts falsos em erros HTTP** | `classifyAPIError` agora verifica status HTTP antes de fallback por substring |
-| **Lint SA9003** | Branch vazia removida em `validateHTTPClientTLS` |
-| **Permissões do `TLDR_API_KEY_FILE`** | `checkFilePermissions` agora também verifica permissões do arquivo de chave |
-| **Erros de `os.Stat` não eram logados** | Erros inesperados (EACCES, broken symlink) agora são reportados no stderr |
-| **Aviso combinado de permissões** | Se arquivo for legível para grupo E outros, ambos são mencionados |
-| **Release em PR** | Job de release agora pula quando `github.event_name == 'pull_request'` |
-
-### Falsos positivos eliminados em sanitizePrompt
-
-| Palavra | Problema | Solução |
-|---------|----------|---------|
-| `system` | "O sistema está rodando" era falsamente acionado | Removido de `injectionPatterns`, mantido apenas em `injectionKeywords` para pré-filtro |
-| `user` | "O usuário informou" era capturado | Mesma abordagem: keyword apenas, sem pattern standalone |
-| `assistant` | "Assistente de pesquisa" era bloqueado | Mesma abordagem |
-| `now` | "Resuma agora" era capturado (já removido no PR#15) | Mantido removido |
-
-### Padrões de código
+### Qualidade de código
 
 | Melhoria | Detalhe |
 |----------|---------|
-| **`checkFilePermissions` genérico** | Agora recebe `path string` em vez de ser fixo em `.env` |
-| **`filePermsWarn` em inglês** | Universal — warning de segurança em inglês para alcançar mais desenvolvedores |
-| **`RedactCredentials` exportada** | Reutilizável em hooks de cassete e outros contextos |
-| **`classifyAPIError` recebe `[]byte`** | Cópia defensiva evita race com Clear() |
-| **Tracking UTF-8 apenas em bytes escritos** | Bytes descartados (ESC, C0, C1) nunca alteram `utf8Remaining` |
-| **Remoção de `Now()` em testes** | `time.Now()` substituído por `time.Date()` para determinismo |
+| **Números mágicos eliminados** | 20+ constantes nomeadas para faixas UTF-8 e ANSI C1/C0 |
+| **`finish_reason` com switch** | Tratamento explícito de `stop`, `length`, `content_filter` + fallback para valores desconhecidos (`tool_calls`, `function_call`) com mensagens descritivas |
+| **`apiKeyCopy` zerada após uso** | `defer` com loop de zeroing em `Summarize()` minimiza janela de exposição da chave na memória |
+| **Variáveis de ambiente preservadas** | Testes que setam `TLDR_API_KEY` restauram o valor original via `defer` |
+
+### Validação de entrada
+
+| Melhoria | Detalhe |
+|----------|---------|
+| **Fail fast para `--timeout < 0`** | Validação movida para **antes** de `ReadInput` — feedback instantâneo sem esperar I/O |
+| **Mensagem de erro clara** | Retorna `ExitArgs` com `"--timeout deve ser um número positivo em segundos, got %d"` |
+| **Help do `--timeout`** | Descrição atualizada para `"deve ser > 0; default: 30"` |
 
 ### CI/CD
 
 | Melhoria | Detalhe |
 |----------|---------|
-| **`gosec` exclui `internal/integration`** | Testes de integração com cassetes não são escaneados (chaves fictícias) |
+| **Trigger desacoplado** | `push` e `pull_request` sem `branches: [main]` — CI roda em qualquer branch |
+| **Cross-compilação explícita** | `GOOS=linux GOARCH=amd64` garante binário consistente independente do runner |
 | **Release condicional** | `github.event_name != 'pull_request'` impede release acidental em PRs |
+| **Artifact naming** | `tldr-linux-amd64` — nome descritivo com platforma |
 
 ---
 
 ## 🧪 Testes
 
-### Testes de Integração com Cassete (+332 linhas)
+### Novos testes unitários
 
 | Teste | O que cobre |
 |-------|-------------|
-| `TestSummarizeWithCassette` | Chamada bem-sucedida com texto longo em pt-br |
-| `TestSummarizeWithCassetteShortText` | Chamada bem-sucedida com texto curto em en |
-| `TestSummarizeAuthError` | Erro 401 — credenciais inválidas mapeado para mensagem amigável |
-| `TestSummarizeRateLimitError` | Erro 429 — rate limit mapeado para mensagem amigável |
-| `TestSummarizeServerError` | Erro 500 — servidor indisponível mapeado para mensagem amigável |
-| `TestSummarizeContextCanceled` | Contexto cancelado — erro tratado sem panic |
-| `TestSummarizeContextDeadline` | Deadline expirado — erro de timeout detectado |
-
-### Cassetes Gravados (5 arquivos YAML)
-
-| Cassete | Cenário | Status HTTP |
-|---------|---------|-------------|
-| `summarize_success.yaml` | Resumo bem-sucedido (pt-br) | 200 |
-| `summarize_short.yaml` | Resumo bem-sucedido (en, texto curto) | 200 |
-| `summarize_unauthorized.yaml` | Chave inválida | 401 |
-| `summarize_rate_limited.yaml` | Rate limit excedido | 429 |
-| `summarize_server_error.yaml` | Erro interno do servidor | 500 |
-
-### Testes de Unidade Adicionados/Modificados
-
-| Teste | O que cobre |
-|-------|-------------|
-| `TestCheckFilePermissions` | 8 casos: arquivo inexistente, 0600, 0640 (grupo), 0644 (outros), subdiretório, diretório, 000 (sem permissão), erro EACCES no stat |
-| `TestExecuteGlobal` | Execute() lazy-init com sync.Once, idempotência, --help funciona |
-| `TestInitRootCommand` | Execute() não panica, flags --lang/--model/--prompt registradas |
-| `TestSanitizePrompt` | +6 casos: system tag injeção total, system tag residual, assistant tag, user tag, pré-filtro sem keywords, keyword sem pattern |
-| `TestSanitizeOutputC1Bytes` | +5 casos: UTF-8 válido 0x80, 0xA0-0xBF (à), 3-byte U+0900, lone continuation byte descartado |
-| `TestProtectedAPIKeyBytes` | Atualizado: Bytes retorna cópia (mutação não afeta original) |
-| `TestAPIKeyBytes` | Renomeado para `apiKeyBytes` (não exportado) |
-
-### Melhorias em testes existentes
-
-| Teste | Mudança |
-|-------|---------|
-| `TestCheckEnvPermissions` → `TestCheckFilePermissions` | Renomeado e expandido: parâmetro path, casos de erro EACCES, permissão de grupo + others combinadas |
-| `TestRedactCredentials` | Função exportada como `RedactCredentials` — testada também via hook do cassete |
-| `TestNew` (summarizer) | Validação de `HTTPClient` com TLS inseguro, cliente customizado |
+| `TestGetLocaleCaseInsensitive` | 6 subtestes: `PT-BR`, `pt_BR`, `Pt-br`, `PT`, equivalência entre 5 variantes, `EN` maiúsculo |
+| `TestExecute/--timeout_negativo_(fail_fast_antes_de_IO)` | Timeout -5 falha com erro contendo "positivo" e retorna `ExitArgs` (exit code 3) |
 
 ---
 
-## 📦 Arquivos Modificados (19 arquivos)
+## 📦 Arquivos Modificados (5 arquivos)
 
-| Arquivo | Mudanças |
-|---------|----------|
-| `.github/workflows/ci.yml` | 🔄 Release job: `&& github.event_name != 'pull_request'` |
-| `CHANGELOG.md` | 📝 Seção PR #18 adicionada |
-| `PULL_REQUEST_TEMPLATE.md` | 📝 Este documento |
-| `cmd/root.go` | 🔄 `sanitizePrompt()` com pré-filtro de keywords (performance), `injectionKeywords` expandido com system/user/assistant |
-| `cmd/root_test.go` | 🧪 `TestExecuteGlobal`, `TestInitRootCommand`, +6 casos em `TestSanitizePrompt`, +5 casos em `TestSanitizeOutputC1Bytes` |
-| `go.mod` | ➕ `gopkg.in/dnaeon/go-vcr.v3 v3.2.0`, `gopkg.in/yaml.v3 v3.0.1` |
-| `go.sum` | ➕ Checksums para go-vcr e yaml.v3 |
-| `internal/config/config.go` | 🔄 `checkEnvPermissions()` → `checkFilePermissions(path string)`, `APIKeyBytes()` → `apiKeyBytes()` (não exportado), warning combinado group+others, stderr log para erros de stat, verificação de `TLDR_API_KEY_FILE` |
-| `internal/config/config_test.go` | 🧪 `TestCheckFilePermissions` (8 casos), `TestAPIKeyBytes` → `apiKeyBytes` |
-| `internal/integration/cassette_test.go` | ➕ **Novo**: 332 linhas — testes de integração com go-vcr, 7 cenários |
-| `internal/integration/testdata/cassettes/summarize_success.yaml` | ➕ Cassete: sucesso 200 (pt-br) |
-| `internal/integration/testdata/cassettes/summarize_short.yaml` | ➕ Cassete: sucesso 200 (en, texto curto) |
-| `internal/integration/testdata/cassettes/summarize_unauthorized.yaml` | ➕ Cassete: erro 401 |
-| `internal/integration/testdata/cassettes/summarize_rate_limited.yaml` | ➕ Cassete: erro 429 |
-| `internal/integration/testdata/cassettes/summarize_server_error.yaml` | ➕ Cassete: erro 500 |
-| `internal/secrets/secrets.go` | 🔒 `Bytes()` retorna cópia defensiva (`make + copy`), `Clear()` nil-safe mantido |
-| `internal/secrets/secrets_test.go` | 🧪 `TestProtectedAPIKeyBytes` atualizado: mutação não afeta original |
-| `internal/summarizer/summarizer.go` | ➕ `Config.HTTPClient`, `validateHTTPClientTLS()`, `Client.mu sync.Mutex`, `Client.cleared`, `RedactCredentials()` exportada, `classifyAPIError` reordenado (HTTP antes de substring), `Summarize()` thread-safe com cópia da apiKey |
-| `internal/summarizer/summarizer_test.go` | 🧪 Testes para TLS validation, HTTPClient customizado, Clear thread-safe |
+| Arquivo | Status | Mudanças |
+|---------|--------|----------|
+| `.github/workflows/ci.yml` | 🔄 | Removido `branches: [main]` dos triggers `push` e `pull_request`; build agora usa `GOOS=linux GOARCH=amd64` |
+| `CHANGELOG.md` | 📝 | Seção PR #19 adicionada |
+| `PULL_REQUEST_TEMPLATE.md` | 📝 | Este documento |
+| `cmd/root.go` | 🔄 | Constantes nomeadas UTF-8/ANSI; validação `--timeout < 0` com fail fast; `getLocale()` case-insensitive; help do timeout atualizado |
+| `cmd/root_test.go` | 🧪 | `TestGetLocaleCaseInsensitive` (6 subtestes); `TestExecute/--timeout negativo` |
+| `internal/summarizer/summarizer.go` | 🔄 | `finish_reason` com switch; `apiKeyCopy` zerada via defer |
 
 ---
 
@@ -211,29 +97,27 @@ key.Get() == "sk-..." // true — cópia defensiva
 
 - [ ] Testes passam (`make test`)
 - [ ] Testes com race detector (`make test-race`)
-- [ ] Testes de integração em modo replay (`go test -tags=integration -v ./internal/integration/`)
 - [ ] Lint passa (`make lint`)
 - [ ] Build passa (`make build`)
-- [ ] `ProtectedAPIKey.Bytes()` retorna cópia (mutação externa não afeta interno)
-- [ ] `sanitizePrompt()` com pré-filtro não quebra prompts sem keywords
-- [ ] `sanitizeOutput()` descarta lone continuation bytes (0x80-0xBF sem lead byte)
-- [ ] `classifyAPIError` classifica HTTP 401/429/500 antes de fallback por substring
-- [ ] `Summarize()` após Clear retorna erro (não panic)
-- [ ] Thread-safety: Summarize() e Clear() não raceiam (mutex + cópia defensiva)
-- [ ] `validateHTTPClientTLS()` rejeita `InsecureSkipVerify=true`
-- [ ] Cassetes gravados têm Authorization redigido (Bearer ***REDACTED***)
-- [ ] `checkFilePermissions()` funciona com caminhos arbitrários
-- [ ] Erro inesperado de `os.Stat` é logado no stderr
-- [ ] Aviso de permissão combinado (group + others) funciona
-- [ ] `TLDR_API_KEY_FILE` tem permissões verificadas
+- [ ] CI roda em branches não-main (push e pull_request sem restrição)
+- [ ] `--timeout -5` retorna erro fail fast (antes de ReadInput)
+- [ ] `--timeout -5` retorna ExitArgs (código 3)
+- [ ] `getLocale("PT-BR")` retorna configuração pt-br (case-insensitive)
+- [ ] `getLocale("pt_BR")` retorna configuração pt-br (underscore)
+- [ ] Números mágicos substituídos por constantes em `sanitizeOutput()`
+- [ ] `finish_reason` desconhecido (ex: `tool_calls`) tem fallback seguro
+- [ ] `apiKeyCopy` é zerada após uso em Summarize()
 - [ ] Release job não roda em pull_request
+- [ ] Release job roda apenas em tags `v*`
+- [ ] Cross-compilação produz binário `tldr` (linux amd64)
+- [ ] Artifact `tldr-linux-amd64` é carregado no build job
 - [ ] CHANGELOG e PULL_REQUEST_TEMPLATE atualizados
 
 ---
 
 ## 🔗 Links
 
-- [Issue #6 — Testes unitários e de integração](https://github.com/Elissdev/tl-dr/issues/6)
+- [Issue #7 — CI/CD com GitHub Actions](https://github.com/Elissdev/tl-dr/issues/7)
 - [CHANGELOG](./CHANGELOG.md)
 - [README](./README.md)
 - [Especificação do projeto](./projeto.md)

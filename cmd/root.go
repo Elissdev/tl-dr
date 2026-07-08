@@ -98,6 +98,12 @@ Exemplos de uso:
 				fmt.Fprintf(os.Stderr, "🤖 Modelo: %s\n", resolvedModel)
 			}
 
+			// Valida flags antes de qualquer I/O (fail fast)
+			if *timeoutFlag < 0 {
+				return WrapExitError(ExitArgs,
+					fmt.Errorf("--timeout deve ser um número positivo em segundos, got %d", *timeoutFlag))
+			}
+
 			// 3. Ler entrada
 			text, err := input.ReadInput(args)
 			if err != nil {
@@ -188,7 +194,7 @@ Exemplos de uso:
 	modelFlag = cmd.Flags().StringP("model", "m", "", "Modelo a usar (default: deepseek/deepseek-v4-flash)")
 	customPrompt = cmd.Flags().StringP("prompt", "p", "", "Prompt customizado para o resumo")
 	noSanitize = cmd.Flags().BoolP("no-sanitize", "", false, "Desabilita sanitização de escape codes ANSI na saída (use se o terminal já processa cores/estilos)")
-	timeoutFlag = cmd.Flags().IntP("timeout", "t", 0, "Timeout da requisição em segundos (default: 30)")
+	timeoutFlag = cmd.Flags().IntP("timeout", "t", 0, "Timeout da requisição em segundos (deve ser > 0; default: 30)")
 	// --lang é validado manualmente no RunE (pode vir via TLDR_DEFAULT_LANG)
 
 	// Suporte a --version
@@ -241,9 +247,15 @@ var defaultLocale = localeConfig{
 }
 
 // getLocale retorna a configuração de prompt para o idioma informado.
+// O lookup é case-insensitive: "PT-BR", "pt_BR" e "Pt-br" são normalizados
+// para "pt-br" antes da busca no mapa.
 // Se o idioma não estiver mapeado, retorna o fallback em inglês.
 func getLocale(lang string) localeConfig {
-	if cfg, ok := supportedLocales[lang]; ok {
+	// Normaliza: lower case + underscore para hífen
+	// Ex: "PT-BR" → "pt-br", "pt_BR" → "pt-br", "Pt-br" → "pt-br"
+	normalized := strings.ToLower(lang)
+	normalized = strings.ReplaceAll(normalized, "_", "-")
+	if cfg, ok := supportedLocales[normalized]; ok {
 		return cfg
 	}
 	return defaultLocale
@@ -364,6 +376,43 @@ func sanitizePrompt(prompt string) (string, error) {
 	return original, nil
 }
 
+// Constantes para detecção de sequências UTF-8.
+// Evitam números mágicos e melhoram a legibilidade do parser.
+const (
+	utf8Lead2     = 0xC0 // início de UTF-8 de 2 bytes
+	utf8Lead2End  = 0xDF
+	utf8Lead3     = 0xE0 // início de UTF-8 de 3 bytes
+	utf8Lead3End  = 0xEF
+	utf8Lead4     = 0xF0 // início de UTF-8 de 4 bytes
+	utf8Lead4End  = 0xF7
+	utf8ContStart = 0x80 // continuation byte (10xxxxxx)
+	utf8ContEnd   = 0xBF
+	c1Start       = 0x80 // início da faixa C1
+	c1End         = 0x9F // fim da faixa C1
+)
+
+// Constantes para caracteres de controle ANSI/terminal.
+const (
+	csi8bit  = 0x9B // CSI em representação 8-bit
+	osc8bit  = 0x9D // OSC em representação 8-bit
+	dcs8bit  = 0x90 // DCS em representação 8-bit
+	sos8bit  = 0x98 // SOS em representação 8-bit
+	pm8bit   = 0x9E // PM em representação 8-bit
+	apc8bit  = 0x9F // APC em representação 8-bit
+	st8bit   = 0x9C // ST (String Terminator) 8-bit
+	sci8bit  = 0x9A // SCI (Single Control Introducer) 8-bit
+	bel      = 0x07 // Bell (usado como ST alternativo)
+	esc      = 0x1b // Escape (iniciador de sequências 7-bit)
+	c0Min    = 0x00 // início de controles C0
+	c0Max    = 0x1F // fim de controles C0 (exceto tab, LF, CR)
+)
+
+// Faixa de bytes finais de sequências CSI (0x40-0x7E).
+const (
+	csiFinalMin = 0x40
+	csiFinalMax = 0x7E
+)
+
 // sanitizeOutput remove sequências de escape ANSI potencialmente maliciosas
 // da saída do modelo, prevenindo ataques de injeção de terminal.
 //
@@ -394,10 +443,10 @@ func sanitizeOutput(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 
-		// Bytes 0x80-0x9F: podem ser continuation bytes UTF-8 OU controles C1.
+		// Bytes c1Start-c1End: podem ser continuation bytes UTF-8 OU controles C1.
 		// Se estamos esperando continuation bytes, passa direto (é UTF-8 válido).
 		// Caso contrário, pode ser tentativa de injeção com C1 malformado.
-		if c >= 0x80 && c <= 0x9F {
+		if c >= c1Start && c <= c1End {
 			if utf8Remaining > 0 {
 				// É continuation byte UTF-8 válido — preserva
 				utf8Remaining--
@@ -407,43 +456,43 @@ func sanitizeOutput(s string) string {
 			// Byte C1 isolado (não parte de UTF-8): tenta interpretar como
 			// sequência de controle, ou descarta.
 			switch c {
-			case 0x9B:
+			case csi8bit:
 				// CSI em 8-bit: <params> <final>, igual a ESC [
-				i++ // skip 0x9B
+				i++ // skip csi8bit
 				for i < len(s) {
 					c2 := s[i]
 					i++
-					if c2 >= 0x40 && c2 <= 0x7E {
+					if c2 >= csiFinalMin && c2 <= csiFinalMax {
 						break
 					}
 				}
 				i--
-			case 0x9D:
-				// OSC em 8-bit: ... ST (0x9C ou 0x07)
+			case osc8bit:
+				// OSC em 8-bit: ... ST (st8bit ou bel)
 				i++
 				for i < len(s) {
 					c2 := s[i]
 					i++
-					if c2 == 0x07 || c2 == 0x9C {
+					if c2 == bel || c2 == st8bit {
 						break
 					}
 				}
 				i--
-			case 0x90, 0x98, 0x9E, 0x9F:
-				// DCS/SOS/PM/APC: ... ST (0x9C ou 0x07)
+			case dcs8bit, sos8bit, pm8bit, apc8bit:
+				// DCS/SOS/PM/APC: ... ST (st8bit ou bel)
 				i++
 				for i < len(s) {
 					c2 := s[i]
 					i++
-					if c2 == 0x07 || c2 == 0x9C {
+					if c2 == bel || c2 == st8bit {
 						break
 					}
 				}
 				i--
-			case 0x9C:
+			case st8bit:
 				// ST solto — descarta
 				continue
-			case 0x9A:
+			case sci8bit:
 				// SCI — descarta este e próximo byte
 				i++
 				continue
@@ -454,7 +503,7 @@ func sanitizeOutput(s string) string {
 			continue
 		}
 
-		if c == 0x1b { // ESC (7-bit)
+		if c == esc { // ESC (7-bit)
 			i++
 			if i < len(s) {
 				c2 := s[i]
@@ -465,36 +514,36 @@ func sanitizeOutput(s string) string {
 					for i < len(s) {
 						c3 := s[i]
 						i++
-						if c3 >= 0x40 && c3 <= 0x7E {
+						if c3 >= csiFinalMin && c3 <= csiFinalMax {
 							break
 						}
 					}
 					i--
 				case ']':
-					// OSC sequence: ESC ] ... ST (ESC \) ou BEL (0x07)
+					// OSC sequence: ESC ] ... ST (ESC \) ou BEL (bel)
 					i++
 					for i < len(s) {
 						c3 := s[i]
 						i++
-						if c3 == 0x07 {
+						if c3 == bel {
 							break
 						}
-						if c3 == 0x1b && i < len(s) && s[i] == '\\' {
+						if c3 == esc && i < len(s) && s[i] == '\\' {
 							i++
 							break
 						}
 					}
 					i--
 				case 'P', 'X', '^', '_':
-					// DCS/SOS/PM/APC: ESC <char> ... ST (ESC \) ou BEL (0x07)
+					// DCS/SOS/PM/APC: ESC <char> ... ST (ESC \) ou BEL (bel)
 					i++
 					for i < len(s) {
 						c3 := s[i]
 						i++
-						if c3 == 0x07 {
+						if c3 == bel {
 							break
 						}
-						if c3 == 0x1b && i < len(s) && s[i] == '\\' {
+						if c3 == esc && i < len(s) && s[i] == '\\' {
 							i++
 							break
 						}
@@ -502,12 +551,12 @@ func sanitizeOutput(s string) string {
 					i--
 				default:
 					// ESC seguido de byte não C1 conhecido.
-					// ESC nunca faz parte de UTF-8 válido, portanto bytes >= 0x80
+					// ESC nunca faz parte de UTF-8 válido, portanto bytes >= utf8ContStart
 					// após ESC nunca são continuation bytes legítimos.
-					if c2 >= 0x80 {
+					if c2 >= utf8ContStart {
 						// Pula todos os bytes de continuação
 						i++
-						for i < len(s) && s[i] >= 0x80 && s[i] < 0xC0 {
+						for i < len(s) && s[i] >= utf8ContStart && s[i] < utf8Lead2 {
 							i++
 						}
 						i--
@@ -519,7 +568,7 @@ func sanitizeOutput(s string) string {
 			continue
 		}
 
-		if c < 0x20 && c != '\t' && c != '\n' && c != '\r' {
+		if c >= c0Min && c <= c0Max && c != '\t' && c != '\n' && c != '\r' {
 			// Remove caracteres de controle C0 não-imprimíveis
 			// (exceto tab, newline, CR)
 			continue
@@ -527,20 +576,20 @@ func sanitizeOutput(s string) string {
 
 		// A partir daqui o byte será escrito — atualizamos o tracking UTF-8
 		// APENAS para bytes que serão preservados na saída.
-		if c >= 0xC0 && c <= 0xDF {
+		if c >= utf8Lead2 && c <= utf8Lead2End {
 			// Início de sequência UTF-8 de 2 bytes
 			utf8Remaining = 1
-		} else if c >= 0xE0 && c <= 0xEF {
+		} else if c >= utf8Lead3 && c <= utf8Lead3End {
 			// Início de sequência UTF-8 de 3 bytes
 			utf8Remaining = 2
-		} else if c >= 0xF0 && c <= 0xF7 {
+		} else if c >= utf8Lead4 && c <= utf8Lead4End {
 			// Início de sequência UTF-8 de 4 bytes
 			utf8Remaining = 3
-		} else if c >= 0x80 && c <= 0xBF && utf8Remaining > 0 {
-			// Continuation byte (0x80-0xBF) que não foi capturado
+		} else if c >= utf8ContStart && c <= utf8ContEnd && utf8Remaining > 0 {
+			// Continuation byte que não foi capturado
 			// pelo bloco C1 acima (faixa 0xA0-0xBF)
 			utf8Remaining--
-		} else if c >= 0x80 && c <= 0xBF {
+		} else if c >= utf8ContStart && c <= utf8ContEnd {
 			// Lone continuation byte sem lead byte correspondente.
 			// Embora a entrada seja validada como UTF-8 upstream, descartamos
 			// por segurança para evitar vazamento de bytes C1 malformados

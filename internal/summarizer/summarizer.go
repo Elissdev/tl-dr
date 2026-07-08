@@ -218,17 +218,30 @@ func (s *Client) Summarize(ctx context.Context, systemPrompt, userText string) (
 	}
 
 	choice := chat.Choices[0]
-	if choice.FinishReason == "length" {
-		return choice.Message.Content, ErrTruncated
-	}
-	if choice.FinishReason == "content_filter" {
-		return "", fmt.Errorf("resumo bloqueado pelo filtro de conteúdo da API")
-	}
-	if choice.FinishReason == "stop" && choice.Message.Content == "" {
-		return "", fmt.Errorf("API retornou conteúdo vazio com finish_reason=stop")
-	}
 
-	return choice.Message.Content, nil
+	// Mapeia finish_reason para ação correspondente.
+	// Valores conhecidos são tratados explicitamente; valores não mapeados
+	// (ex: "tool_calls", "function_call") têm fallback seguro.
+	switch choice.FinishReason {
+	case "stop":
+		if choice.Message.Content == "" {
+			return "", fmt.Errorf("API retornou conteúdo vazio com finish_reason=stop")
+		}
+		return choice.Message.Content, nil
+	case "length":
+		return choice.Message.Content, ErrTruncated
+	case "content_filter":
+		return "", fmt.Errorf("resumo bloqueado pelo filtro de conteúdo da API")
+	default:
+		// finish_reason desconhecido (ex: "tool_calls", "function_call").
+		// Se houver conteúdo, retorna com aviso; caso contrário, erro.
+		if choice.Message.Content != "" {
+			return choice.Message.Content, fmt.Errorf(
+				"resumo pode estar incompleto: finish_reason inesperado %q", choice.FinishReason)
+		}
+		return "", fmt.Errorf(
+			"API retornou finish_reason inesperado %q sem conteúdo", choice.FinishReason)
+	}
 }
 
 // redactedError envolve um erro original e apresenta uma mensagem redigida,

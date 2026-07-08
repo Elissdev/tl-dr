@@ -258,18 +258,22 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 	// classificação do erro.
 	redactedMsg := redactCredentials(err.Error(), apiKey)
 
-	// Detecta timeout antes de tentar interpretar como erro da API,
-	// pois timeouts podem manifestar-se como erros de rede antes mesmo
-	// de uma resposta HTTP ser recebida.
-	if errors.Is(err, context.DeadlineExceeded) ||
-		strings.Contains(err.Error(), "timeout") ||
-		strings.Contains(err.Error(), "deadline") {
+	// 1. Timeout real por contexto expirado — detecta via errors.Is,
+	// que é a forma confiável. O Go padrão da biblioteca (http.Client,
+	// openai-go) propaga context.DeadlineExceeded para timeouts de rede.
+	// context.Canceled NÃO entra aqui (cancelamento não é timeout).
+	if errors.Is(err, context.DeadlineExceeded) {
 		return &redactedError{
 			msg:   fmt.Sprintf("%s: %s", ErrTimeout.Error(), redactedMsg),
 			cause: fmt.Errorf("%w: %w", ErrTimeout, err),
 		}
 	}
 
+	// 2. Erro da API com status HTTP — classifica por código.
+	// IMPORTANTE: Isso vem ANTES da detecção por substring para evitar que
+	// mensagens de erro da API que contenham "timeout" ou "deadline"
+	// (ex: erro 400 "timeout parameter invalid") sejam falsamente
+	// classificadas como timeout.
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
 		msg := redactCredentials(apiErr.Error(), apiKey)
@@ -295,6 +299,18 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 				msg:   fmt.Sprintf("erro da API (HTTP %d): %s", apiErr.StatusCode, msg),
 				cause: err,
 			}
+		}
+	}
+
+	// 3. Fallback para erros de rede não capturados por errors.Is:
+	// Alguns transportes HTTP custom ou proxies podem não propagar
+	// context.DeadlineExceeded corretamente. Neste caso, usamos
+	// substring como heurística apenas para erros que NÃO são da API.
+	if strings.Contains(err.Error(), "timeout") ||
+		strings.Contains(err.Error(), "deadline") {
+		return &redactedError{
+			msg:   fmt.Sprintf("%s: %s", ErrTimeout.Error(), redactedMsg),
+			cause: fmt.Errorf("%w: %w", ErrTimeout, err),
 		}
 	}
 

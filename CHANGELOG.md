@@ -1,5 +1,38 @@
 # Changelog
 
+## PR #20 — Fase 8: Documentação e Release — README, licença, primeiro release (2026-07-08)
+
+### 🟢 Novas Funcionalidades
+
+#### Licença MIT
+
+- **Arquivo `LICENSE` adicionado**: licença MIT com copyright 2026 Elissandra Santos da Silva
+- README atualizado com badge e link para a licença
+
+#### Release via Makefile
+
+- **`make release v=v0.1.0`**: cria tag SemVer e faz push (dispara o job `release` no CI)
+- Target valida que o parâmetro `v` foi fornecido
+
+#### Badges no README
+
+- **Go Version**: badge da versão do Go (1.22.5)
+- **License**: badge MIT com link para LICENSE
+- **CI**: badge de status do GitHub Actions (build/test/lint)
+- **Release**: badge da última versão publicada
+
+### 📝 Documentação
+
+#### README expandido
+
+- **Instalação**: 3 métodos — binário pre-compilado (curl), `go install`, e compilação do fonte
+- **Seção de Contribuição**: guia passo a passo com fork, branch, testes, lint e abertura de PR
+- **Convenções**: prefixos semânticos de commit, padrão de nomenclatura de branches
+- **Licença**: atualizada de "A definir" para MIT com link para o arquivo LICENSE
+- **Makefile**: comando `make release` adicionado à lista de comandos de desenvolvimento
+
+---
+
 ## PR #19 — Fase 7: CI/CD com GitHub Actions + Correções de Code Review (2026-07-08)
 
 ### 🟢 Novas Funcionalidades

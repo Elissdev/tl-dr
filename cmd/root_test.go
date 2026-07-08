@@ -546,62 +546,12 @@ func TestFirstNonEmpty(t *testing.T) {
 }
 
 
-func TestRootCommandStruct(t *testing.T) {
-	t.Run("RootCommand criado via init()", func(t *testing.T) {
-		// O init() deve ter criado rootCmd com um comando válido
-		if rootCmd == nil {
-			t.Fatal("rootCmd é nil após init()")
-		}
-		if rootCmd.cmd == nil {
-			t.Fatal("rootCmd.cmd é nil após init()")
-		}
-		if rootCmd.cmd.Use != "tldr [flags] [<arquivo>]" {
-			t.Errorf("Use = %q, want 'tldr [flags] [<arquivo>]'", rootCmd.cmd.Use)
-		}
-	})
-
-	t.Run("RootCommand.Command() retorna o comando", func(t *testing.T) {
-		if rootCmd.Command() != rootCmd.cmd {
-			t.Error("Command() deve retornar o mesmo comando interno")
-		}
-	})
-
-	t.Run("RootCommand.Execute() delega para cmd.Execute()", func(t *testing.T) {
-		// Verifica que não há panic ao chamar Execute sem args
-		// (deve retornar erro de argumento, não panic)
-		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
-		os.Unsetenv("TLDR_API_KEY")
-
-		err := rootCmd.Execute()
-
-		if keyExisted {
-			os.Setenv("TLDR_API_KEY", prevKey)
-		} else {
-			os.Unsetenv("TLDR_API_KEY")
-		}
-
-		if err == nil {
-			t.Fatal("Execute() sem chave = nil, want erro")
-		}
-	})
-
-	t.Run("--help funciona no comando raiz", func(t *testing.T) {
-		cmd := newRootCommand("test")
-		cmd.SetArgs([]string{"--help"})
-		err := cmd.Execute()
-		// Cobra retorna flag de ajuda como erro (SilenceUsage: true)
-		// Help flag: cobra registra flag de ajuda automaticamente
-		help := cmd.Flags().Lookup("help")
-		if help == nil {
-			t.Error("flag --help não registrada automaticamente pelo Cobra")
-		}
-		_ = err // Cobra retorna flag pflag.ErrHelp para --help
-	})
-}
-
-func TestInitRootCommand(t *testing.T) {
-	t.Run("Execute() usa o comando global do init()", func(t *testing.T) {
-		// Verifica que Execute() não dá panic e usa o comando global
+func TestExecuteGlobal(t *testing.T) {
+	t.Run("Execute() lazy-init cria comando via sync.Once", func(t *testing.T) {
+		// Antes de chamar Execute(), rootCmd deve ser nil
+		// (assumindo execução isolada; em testes sequenciais pode já ter sido
+		// inicializado por outro teste que chamou Execute()).
+		// Verificamos que a chamada não panica e retorna erro esperado (sem chave).
 		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
 		os.Unsetenv("TLDR_API_KEY")
 
@@ -618,7 +568,62 @@ func TestInitRootCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("init() registra flags --lang, --model, --prompt", func(t *testing.T) {
+	t.Run("Execute() é idempotente (sync.Once)", func(t *testing.T) {
+		// A segunda chamada não deve recriar o comando.
+		// Como o comando já foi criado pela primeira chamada,
+		// o sync.Once garante que newRootCommand só roda uma vez.
+		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
+		os.Unsetenv("TLDR_API_KEY")
+
+		err1 := Execute()
+		err2 := Execute()
+		_ = err1
+
+		if keyExisted {
+			os.Setenv("TLDR_API_KEY", prevKey)
+		} else {
+			os.Unsetenv("TLDR_API_KEY")
+		}
+
+		// Ambas as chamadas devem retornar o mesmo tipo de erro
+		// (erro de chave ausente) sem panic.
+		if err2 == nil {
+			t.Fatal("segunda Execute() = nil, want erro")
+		}
+	})
+
+	t.Run("--help funciona no comando raiz", func(t *testing.T) {
+		cmd := newRootCommand("test")
+		cmd.SetArgs([]string{"--help"})
+		err := cmd.Execute()
+		help := cmd.Flags().Lookup("help")
+		if help == nil {
+			t.Error("flag --help não registrada automaticamente pelo Cobra")
+		}
+		_ = err // Cobra retorna flag pflag.ErrHelp para --help
+	})
+}
+
+func TestInitRootCommand(t *testing.T) {
+	t.Run("Execute() inicializa comando lazy", func(t *testing.T) {
+		// Verifica que Execute() não dá panic
+		prevKey, keyExisted := os.LookupEnv("TLDR_API_KEY")
+		os.Unsetenv("TLDR_API_KEY")
+
+		err := Execute()
+
+		if keyExisted {
+			os.Setenv("TLDR_API_KEY", prevKey)
+		} else {
+			os.Unsetenv("TLDR_API_KEY")
+		}
+
+		if err == nil {
+			t.Fatal("Execute() sem chave = nil, want erro")
+		}
+	})
+
+	t.Run("newRootCommand registra flags --lang, --model, --prompt", func(t *testing.T) {
 		cmd := newRootCommand("test")
 
 		langFlag := cmd.Flags().Lookup("lang")

@@ -324,11 +324,14 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 // encontrados em s por "***REDACTED***".
 // Também redige a chave de API fornecida (qualquer formato).
 //
+// O parâmetro apiKey é um slice de bytes; se vazio ou nil,
+// apenas os padrões conhecidos de credenciais são redigidos.
+//
 // Esta função é exportada para permitir reuso em outras camadas
 // (ex: testes de integração que precisam redigir dados antes de
 // persistir cassetes HTTP).
-func RedactCredentials(s, apiKey string) string {
-	return redactCredentials(s, []byte(apiKey))
+func RedactCredentials(s string, apiKey []byte) string {
+	return redactCredentials(s, apiKey)
 }
 
 // redactCredentials é a implementação interna de RedactCredentials.

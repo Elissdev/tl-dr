@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Elissdev/tl-dr/internal/config"
@@ -34,33 +35,10 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// RootCommand representa o comando raiz da CLI tl;dr.
-// Encapsula o comando Cobra e fornece acesso às flags configuradas.
-type RootCommand struct {
-	cmd          *cobra.Command
-	Lang         string
-	ModelFlag    string
-	CustomPrompt string
-	NoSanitize   bool
-	TimeoutFlag  int
-}
-
-// Command retorna o comando Cobra interno.
-func (r *RootCommand) Command() *cobra.Command {
-	return r.cmd
-}
-
-// Execute executa o comando raiz.
-func (r *RootCommand) Execute() error {
-	return r.cmd.Execute()
-}
-
-var rootCmd *RootCommand
-
-func init() {
-	rc := newRootCommand(version)
-	rootCmd = &RootCommand{cmd: rc}
-}
+var (
+	rootCmd   *cobra.Command
+	rootCmdMu sync.Once
+)
 
 var version = "dev" // Set via ldflags: -X github.com/Elissdev/tl-dr/cmd.version=x.y.z
 
@@ -220,11 +198,17 @@ Exemplos de uso:
 	return cmd
 }
 
-// Execute executa o comando raiz configurado via init().
+// Execute executa o comando raiz.
+// A inicialização lazy via sync.Once garante que o comando só é construído
+// na primeira chamada, permitindo que main.go chame Execute() sem depender
+// de init() ou estado global mutável entre chamadas.
 // Retorna o erro, se houver, para que o caller (main) possa fazer
 // cleanup adequado antes de os.Exit.
 func Execute() error {
-	return rootCmd.cmd.Execute()
+	rootCmdMu.Do(func() {
+		rootCmd = newRootCommand(version)
+	})
+	return rootCmd.Execute()
 }
 
 // localeConfig agrupa os templates de prompt para um determinado idioma.

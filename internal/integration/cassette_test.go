@@ -92,7 +92,7 @@ func newRecorder(t *testing.T, cassetteName string) *recorder.Recorder {
 			// (captura tokens, chaves de API, JWT etc. que possam estar
 			// presentes no prompt ou texto enviado)
 			if i.Request.Body != "" {
-				i.Request.Body = summarizer.RedactCredentials(i.Request.Body, "")
+				i.Request.Body = summarizer.RedactCredentials(i.Request.Body, nil)
 			}
 
 			return nil

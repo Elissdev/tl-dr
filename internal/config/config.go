@@ -158,11 +158,11 @@ func (c *Config) Clear() {
 	c.APIKey = ""
 }
 
-// APIKeyBytes retorna uma cópia da chave de API como []byte para uso em
+// apiKeyBytes retorna uma cópia da chave de API como []byte para uso em
 // contextos onde o caller pode gerenciar o ciclo de vida da memória.
 // O caller pode zerar a cópia sem afetar o estado interno.
 // Retorna nil se o ProtectedAPIKey não estiver mais disponível.
-func (c *Config) APIKeyBytes() []byte {
+func (c *Config) apiKeyBytes() []byte {
 	if c.protectedKey == nil {
 		return nil
 	}

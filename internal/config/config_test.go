@@ -175,21 +175,21 @@ func TestAPIKeyBytes(t *testing.T) {
 		t.Fatalf("Load() erro inesperado: %v", err)
 	}
 
-	t.Run("APIKeyBytes retorna slice com a chave", func(t *testing.T) {
-		b := cfg.APIKeyBytes()
+	t.Run("apiKeyBytes retorna slice com a chave", func(t *testing.T) {
+		b := cfg.apiKeyBytes()
 		if b == nil {
-			t.Fatal("APIKeyBytes() = nil, want non-nil")
+			t.Fatal("apiKeyBytes() = nil, want non-nil")
 		}
 		if string(b) != "sk-test-key-bytes" {
-			t.Errorf("APIKeyBytes() = %q, want %q", string(b), "sk-test-key-bytes")
+			t.Errorf("apiKeyBytes() = %q, want %q", string(b), "sk-test-key-bytes")
 		}
 	})
 
-	t.Run("APIKeyBytes após Clear retorna nil", func(t *testing.T) {
+	t.Run("apiKeyBytes após Clear retorna nil", func(t *testing.T) {
 		cfg.Clear()
-		b := cfg.APIKeyBytes()
+		b := cfg.apiKeyBytes()
 		if b != nil {
-			t.Errorf("APIKeyBytes() após Clear = %q, want nil", string(b))
+			t.Errorf("apiKeyBytes() após Clear = %q, want nil", string(b))
 		}
 	})
 }

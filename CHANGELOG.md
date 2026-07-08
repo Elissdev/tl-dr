@@ -1,5 +1,101 @@
 # Changelog
 
+## PR #18 — Fase 6: Testes Unitários e de Integração com Cassete (2026-07-08)
+
+### 🔴 Breaking Changes
+
+#### `ProtectedAPIKey.Bytes()` — agora retorna cópia defensiva (não referência direta)
+
+- **Antes:** Retornava referência direta ao slice interno — mutação externa afetava o original
+- **Depois:** Retorna cópia defensiva via `make([]byte, len) + copy()` — mutação externa não afeta interno
+- **Ação:** Código que dependia da mutação do slice para modificar a chave precisa ser revisado
+
+#### `Config.APIKeyBytes()` — renomeado para `apiKeyBytes()` (não exportado)
+
+- **Antes:** `cfg.APIKeyBytes()` — exportado, disponível publicamente
+- **Depois:** `cfg.apiKeyBytes()` — não exportado, uso interno apenas
+- **Ação:** Código externo deve acessar chave via `cfg.APIKey` (string) ou `secrets.ProtectedAPIKey.Bytes()`
+
+#### `checkEnvPermissions()` — renomeado e com assinatura alterada
+
+- **Antes:** `checkEnvPermissions()` — fixo para `.env`, sem parâmetros
+- **Depois:** `checkFilePermissions(path string)` — genérico, recebe caminho do arquivo
+- **Ação:** Código que chamava `checkEnvPermissions()` deve usar `checkFilePermissions(".env")`
+
+#### `envPermsWarn` → `filePermsWarn` (constante não exportada)
+
+- Mensagem alterada de português (`"⚠️  AVISO:"`) para inglês (`"⚠️  WARNING:"`)
+- Mensagem agora inclui o caminho do arquivo específico
+
+---
+
+### 🟢 Novas Funcionalidades
+
+#### Testes de Integração com Cassete (go-vcr)
+
+- **`gopkg.in/dnaeon/go-vcr.v3 v3.2.0`**: dependência para gravação/reprodução de interações HTTP
+- **5 cassetes YAML**: `summarize_success`, `summarize_short`, `summarize_unauthorized`, `summarize_rate_limited`, `summarize_server_error`
+- **Hook `BeforeSaveHook`**: redige header `Authorization` e body com credenciais antes de persistir
+- **Build tag `integration`**: `go test -tags=integration ./internal/integration/`
+- **Modo Record/Replay**: `TLDR_CASSETE_MODE=record` grava; padrão é replay offline
+
+#### Segurança
+
+- **`validateHTTPClientTLS()`**: rejeita `http.Client` com `InsecureSkipVerify=true`
+- **`RedactCredentials()` exportada**: função pública para redigir credenciais em qualquer contexto
+- **`Client.mu sync.Mutex`**: proteção thread-safe entre `Summarize()` e `Clear()`
+- **`Client.cleared` flag**: detecta uso após Clear() e retorna erro (em vez de panic)
+- **Cópia defensiva da apiKey em `Summarize()`**: copia chave antes do unlock para `classifyAPIError` seguro
+- **Lone continuation bytes**: `sanitizeOutput()` descarta bytes 0x80-0xBF isolados (sem lead byte)
+
+#### Performance
+
+- **Pré-filtro de keywords**: `sanitizePrompt()` verifica `injectionKeywords` primeiro; se ausentes, pula regexes
+- **`injectionKeywords` expandido**: `system`, `user`, `assistant` adicionados como keywords (não patterns)
+
+#### Engine
+
+- **`Config.HTTPClient`**: campo opcional para injetar `http.Client` customizado (ex: go-vcr)
+- **`classifyAPIError` reordenado**: erros HTTP (401, 429, 500) detectados **antes** de fallback por substring
+- **Release job no CI**: `github.event_name != 'pull_request'` impede release acidental em PRs
+
+---
+
+### 🔧 Melhorias
+
+- `ProtectedAPIKey.Bytes()` retorna cópia defensiva (make + copy)
+- `sanitizePrompt()`: pré-filtro de keywords evita scan de regex em prompts inocentes
+- `sanitizeOutput()`: lone continuation bytes descartados; tracking UTF-8 só atualizado para bytes escritos
+- `classifyAPIError()`: ordem corrigida — status HTTP antes de substring (evita falsos timeout)
+- `checkFilePermissions(path)`: genérico, aceita qualquer caminho; erros de stat logados no stderr
+- Aviso de permissão combinado: se arquivo for legível para grupo E outros, ambos são mencionados
+- `TLDR_API_KEY_FILE` também tem permissões verificadas após o Load()
+- Lint SA9003 corrigido: branch vazia removida em `validateHTTPClientTLS`
+
+---
+
+### 🧪 Testes
+
+#### Testes de Integração com Cassete (+332 linhas, novo arquivo)
+
+- `TestSummarizeWithCassette` — sucesso pt-br (200)
+- `TestSummarizeWithCassetteShortText` — sucesso en (200)
+- `TestSummarizeAuthError` — 401 para credenciais inválidas
+- `TestSummarizeRateLimitError` — 429 rate limit
+- `TestSummarizeServerError` — 500 servidor indisponível
+- `TestSummarizeContextCanceled` — contexto cancelado sem panic
+- `TestSummarizeContextDeadline` — deadline expirado como timeout
+
+#### Novos Testes Unitários
+
+- `TestCheckFilePermissions` — 8 casos: inexistente, 0600, 0640 (grupo), 0644 (outros), subdiretório, diretório, 000, EACCES
+- `TestExecuteGlobal` — Execute() lazy-init sync.Once, idempotência, --help
+- `TestInitRootCommand` — flags --lang/--model/--prompt registradas
+- `TestSanitizePrompt` — +6 casos: system tag total/residual, assistant, user, pré-filtro, keyword sem pattern
+- `TestSanitizeOutputC1Bytes` — +5 casos: UTF-8 0x80, 0xA0-0xBF, 3-byte, lone continuation byte
+
+---
+
 ## PR #15 — Fase 4: Integração com API (2026-07-07)
 
 ### 🔴 Breaking Changes

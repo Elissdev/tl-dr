@@ -1,0 +1,38 @@
+---
+version: 2
+interactions:
+  - id: 0
+    request:
+      proto: HTTP/1.1
+      proto_major: 1
+      proto_minor: 1
+      content_length: 0
+      transfer_encoding: []
+      trailer: {}
+      host: api.apiario.dev
+      remote_addr: api.apiario.dev:443
+      request_uri: ""
+      body: ""
+      form: {}
+      headers:
+        Authorization:
+          - Bearer sk-replay-server-error
+        Content-Type:
+          - application/json
+      url: https://api.apiario.dev/v1/chat/completions
+      method: POST
+    response:
+      proto: HTTP/2.0
+      proto_major: 2
+      proto_minor: 0
+      transfer_encoding: []
+      trailer: {}
+      content_length: 0
+      uncompressed: false
+      body: '{"error":{"message":"Internal server error","type":"server_error","code":"internal_error"}}'
+      headers:
+        Content-Type:
+          - application/json
+      status: 500 Internal Server Error
+      code: 500
+      duration: "1.0s"

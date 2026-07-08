@@ -6,6 +6,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/openai/openai-go v1.12.0
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/dnaeon/go-vcr.v3 v3.2.0
 )
 
 require (
@@ -15,4 +16,5 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

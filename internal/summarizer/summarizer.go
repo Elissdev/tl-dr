@@ -52,6 +52,17 @@ type Config struct {
 	BaseURL string
 	Model   string
 	Timeout time.Duration
+
+	// HTTPClient permite injetar um cliente HTTP customizado (ex: para testes com go-vcr).
+	// Se nil, um cliente padrão com Timeout é criado.
+	//
+	// SEGURANÇA: o cliente HTTP informado NÃO deve utilizar
+	// tls.Config{InsecureSkipVerify: true} ou transportes que
+	// desabilitem a verificação de certificados TLS, pois isso
+	// abriria uma vulnerabilidade de MITM (Man-In-The-Middle).
+	// Também não devem ser usados transportes que loguem ou
+	// desviem requisições para destinos não autorizados.
+	HTTPClient *http.Client
 }
 
 // Client gerencia a comunicação com a API de sumarização.
@@ -83,10 +94,22 @@ func New(cfg Config) (*Client, error) {
 		timeout = 30 * time.Second
 	}
 
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: timeout}
+	} else if httpClient.Timeout == 0 {
+		httpClient.Timeout = timeout
+	}
+
+	// Validação de segurança: rejeita clientes HTTP com verificação TLS desabilitada
+	if err := validateHTTPClientTLS(httpClient); err != nil {
+		return nil, err
+	}
+
 	client := openai.NewClient(
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),
-		option.WithHTTPClient(&http.Client{Timeout: timeout}),
+		option.WithHTTPClient(httpClient),
 		option.WithMaxRetries(0), // sem retry automático — tratamos erros no classifyAPIError
 	)
 	// Faz uma cópia em []byte para permitir zerar a memória posteriormente
@@ -98,6 +121,37 @@ func New(cfg Config) (*Client, error) {
 		model:  cfg.Model,
 		apiKey: apiKeyBytes,
 	}, nil
+}
+
+// validateHTTPClientTLS verifica se o http.Client fornecido não possui
+// configurações TLS inseguras, como InsecureSkipVerify ativado.
+// Retorna erro se encontrar uma configuração que comprometa a segurança
+// da comunicação com a API.
+func validateHTTPClientTLS(c *http.Client) error {
+	if c == nil {
+		return nil
+	}
+
+	transport := c.Transport
+	if transport == nil {
+		return nil // http.DefaultTransport é seguro
+	}
+
+	t, ok := transport.(*http.Transport)
+	if !ok {
+		// Transport customizado não é um *http.Transport padrão;
+		// não podemos inspecionar, mas confiamos no caller.
+		return nil
+	}
+
+	if t.TLSClientConfig != nil && t.TLSClientConfig.InsecureSkipVerify {
+		return errors.New("HTTPClient com InsecureSkipVerify=true rejeitado: " +
+			"verificação TLS desabilitada expõe a comunicação a ataques MITM")
+	}
+
+	// NOTA: RootCAs personalizado não é bloqueado — assumimos que é intencional.
+
+	return nil
 }
 
 // Clear zera a chave de API da memória do Client.
@@ -204,18 +258,22 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 	// classificação do erro.
 	redactedMsg := redactCredentials(err.Error(), apiKey)
 
-	// Detecta timeout antes de tentar interpretar como erro da API,
-	// pois timeouts podem manifestar-se como erros de rede antes mesmo
-	// de uma resposta HTTP ser recebida.
-	if errors.Is(err, context.DeadlineExceeded) ||
-		strings.Contains(err.Error(), "timeout") ||
-		strings.Contains(err.Error(), "deadline") {
+	// 1. Timeout real por contexto expirado — detecta via errors.Is,
+	// que é a forma confiável. O Go padrão da biblioteca (http.Client,
+	// openai-go) propaga context.DeadlineExceeded para timeouts de rede.
+	// context.Canceled NÃO entra aqui (cancelamento não é timeout).
+	if errors.Is(err, context.DeadlineExceeded) {
 		return &redactedError{
 			msg:   fmt.Sprintf("%s: %s", ErrTimeout.Error(), redactedMsg),
 			cause: fmt.Errorf("%w: %w", ErrTimeout, err),
 		}
 	}
 
+	// 2. Erro da API com status HTTP — classifica por código.
+	// IMPORTANTE: Isso vem ANTES da detecção por substring para evitar que
+	// mensagens de erro da API que contenham "timeout" ou "deadline"
+	// (ex: erro 400 "timeout parameter invalid") sejam falsamente
+	// classificadas como timeout.
 	var apiErr *openai.Error
 	if errors.As(err, &apiErr) {
 		msg := redactCredentials(apiErr.Error(), apiKey)
@@ -244,15 +302,39 @@ func (s *Client) classifyAPIError(err error, apiKey []byte) error {
 		}
 	}
 
+	// 3. Fallback para erros de rede não capturados por errors.Is:
+	// Alguns transportes HTTP custom ou proxies podem não propagar
+	// context.DeadlineExceeded corretamente. Neste caso, usamos
+	// substring como heurística apenas para erros que NÃO são da API.
+	if strings.Contains(err.Error(), "timeout") ||
+		strings.Contains(err.Error(), "deadline") {
+		return &redactedError{
+			msg:   fmt.Sprintf("%s: %s", ErrTimeout.Error(), redactedMsg),
+			cause: fmt.Errorf("%w: %w", ErrTimeout, err),
+		}
+	}
+
 	return &redactedError{
 		msg:   fmt.Sprintf("erro na chamada da API: %s", redactedMsg),
 		cause: err,
 	}
 }
 
-// redactCredentials substitui quaisquer padrões de credenciais
+// RedactCredentials substitui quaisquer padrões de credenciais
 // encontrados em s por "***REDACTED***".
 // Também redige a chave de API fornecida (qualquer formato).
+//
+// O parâmetro apiKey é um slice de bytes; se vazio ou nil,
+// apenas os padrões conhecidos de credenciais são redigidos.
+//
+// Esta função é exportada para permitir reuso em outras camadas
+// (ex: testes de integração que precisam redigir dados antes de
+// persistir cassetes HTTP).
+func RedactCredentials(s string, apiKey []byte) string {
+	return redactCredentials(s, apiKey)
+}
+
+// redactCredentials é a implementação interna de RedactCredentials.
 // O parâmetro apiKey é []byte para permitir que o caller gerencie
 // o ciclo de vida da memória da chave.
 func redactCredentials(s string, apiKey []byte) string {

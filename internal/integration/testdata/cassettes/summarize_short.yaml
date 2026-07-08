@@ -1,0 +1,38 @@
+---
+version: 2
+interactions:
+  - id: 0
+    request:
+      proto: HTTP/1.1
+      proto_major: 1
+      proto_minor: 1
+      content_length: 0
+      transfer_encoding: []
+      trailer: {}
+      host: api.apiario.dev
+      remote_addr: api.apiario.dev:443
+      request_uri: ""
+      body: ""
+      form: {}
+      headers:
+        Authorization:
+          - Bearer sk-replay-key-not-used
+        Content-Type:
+          - application/json
+      url: https://api.apiario.dev/v1/chat/completions
+      method: POST
+    response:
+      proto: HTTP/2.0
+      proto_major: 2
+      proto_minor: 0
+      transfer_encoding: []
+      trailer: {}
+      content_length: 0
+      uncompressed: false
+      body: '{"id":"chatcmpl-xyz789","object":"chat.completion","created":1700000001,"model":"deepseek/deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Go is a statically typed, compiled language created at Google for efficient, concurrent programming."},"finish_reason":"stop"}]}'
+      headers:
+        Content-Type:
+          - application/json
+      status: 200 OK
+      code: 200
+      duration: "1.5s"
